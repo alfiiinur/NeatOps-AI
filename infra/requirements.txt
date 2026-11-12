@@ -1,0 +1,14 @@
+fastapi==0.162.5
+uvicorn[standard]==0.54.0
+python-multipart==0.0.33
+pydantic==2.14.3
+pydantic-settings==2.16.2
+openai==3.49.0
+meta-sam-parser==0.2.0
+httpx==0.28.1
+pillow==13.0.0
+numpy==2.5.4
+opencv-python-headless==5.0.0.93
+pypdf==7.0.1
+pytest==9.2.0
+pytest-asyncio==1.4.1.post1

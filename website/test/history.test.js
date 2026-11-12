@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { loadHistory, saveHistoryEntry, clearHistory, HISTORY_LIMIT } from "../src/lib/history.js";
+import { loadHistory, saveHistoryEntry, clearHistory, HISTORY_LIMIT } from "../src/lib/audit/history.js";
 
 function memStorage() {
   const map = new Map();

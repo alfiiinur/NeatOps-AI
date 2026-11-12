@@ -5,7 +5,8 @@ import {
   generateRackLayout,
   moveSlot,
   assignU,
-} from "../src/lib/rackSimulator.js";
+  filterHardware,
+} from "../src/lib/rack/rackSimulator.js";
 
 describe("katalog hardware rakit", () => {
   it("id unik dan field wajib valid", () => {
@@ -162,5 +163,85 @@ describe("generateRackLayout", () => {
     assert.equal(r.usedU, 0);
     assert.equal(r.freeU, 6);
     assert.ok(r.slots.every((s) => s.auto));
+  });
+});
+
+describe("katalog fiber optik", () => {
+  const FO_IDS = [
+    "olt-gpon-8",
+    "odf-24",
+    "odc-96",
+    "odp-8",
+    "odp-16",
+    "splitter-plc-18",
+    "closure-48",
+    "ont-gpon-4",
+  ];
+
+  it("menyediakan OLT, ODF, ODC, ODP 8/16, splitter, closure, ONT", () => {
+    for (const id of FO_IDS) {
+      assert.ok(HARDWARE_CATALOG.some((h) => h.id === id), `${id} wajib ada di katalog`);
+    }
+  });
+
+  it("item FO punya ilustrasi, warna, dan tag fiber", () => {
+    for (const id of FO_IDS) {
+      const h = HARDWARE_CATALOG.find((x) => x.id === id);
+      assert.ok(h.ilustrasi.startsWith("<svg"), `${id}: ilustrasi wajib SVG`);
+      assert.ok(h.color, `${id}: color wajib ada`);
+      assert.ok(h.tags.includes("fiber"), `${id}: tag fiber wajib ada`);
+    }
+  });
+
+  it("rakitan FTTH: rute & belanja kabel fiber terisi", () => {
+    const r = generateRackLayout(12, [
+      { hwId: "olt-gpon-8", qty: 1 },
+      { hwId: "odf-24", qty: 1 },
+      { hwId: "odp-16", qty: 1 },
+      { hwId: "pdu-rack-1u", qty: 1 },
+      { hwId: "ups-apc-2u", qty: 1 },
+    ]);
+    assert.ok(r.cableRoutes.some((x) => x.label.includes("OLT") && x.label.includes("ODF")));
+    assert.ok(r.cableRoutes.some((x) => x.label.includes("ODP")));
+    assert.ok(r.cableShoppingList.some((x) => x.nama.includes("Patchcord")));
+    const drop = r.cableShoppingList.find((x) => x.nama.includes("Dropcore"));
+    assert.equal(drop.qty, 16); // 1× ODP 16-port
+    assert.ok(r.installSteps.some((s) => s.judul.toLowerCase().includes("fiber")));
+  });
+
+  it("OLT tanpa ODF → tips terminasi serat", () => {
+    const r = generateRackLayout(12, [
+      { hwId: "olt-gpon-8", qty: 1 },
+      { hwId: "pdu-rack-1u", qty: 1 },
+      { hwId: "ups-apc-2u", qty: 1 },
+    ]);
+    assert.ok(r.tips.some((t) => t.includes("ODF")));
+  });
+});
+
+describe("filterHardware (search katalog)", () => {
+  it("query kosong mengembalikan semua", () => {
+    assert.equal(filterHardware("").length, HARDWARE_CATALOG.length);
+    assert.equal(filterHardware("   ").length, HARDWARE_CATALOG.length);
+  });
+
+  it("'odp' hanya mengembalikan item ODP", () => {
+    const out = filterHardware("odp").map((h) => h.id).sort();
+    assert.deepEqual(out, ["odp-16", "odp-8"]);
+  });
+
+  it("tidak case-sensitive dan cocok ke merek/deskripsi/tag", () => {
+    assert.deepEqual(
+      filterHardware("ODP").map((h) => h.id).sort(),
+      ["odp-16", "odp-8"],
+    );
+    const hw = filterHardware("huawei").map((h) => h.id).sort();
+    assert.ok(hw.includes("olt-gpon-8") && hw.includes("ont-gpon-4"));
+    assert.ok(filterHardware("splitter").some((h) => h.id === "splitter-plc-18"));
+    assert.ok(filterHardware("pole-mount").some((h) => h.id === "odc-96"));
+  });
+
+  it("tanpa hasil → array kosong", () => {
+    assert.deepEqual(filterHardware("zxqy-tidak-ada"), []);
   });
 });

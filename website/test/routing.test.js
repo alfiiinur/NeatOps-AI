@@ -6,7 +6,7 @@ import { readFileSync } from "node:fs";
 // dan tiap branch harus ada di menu (mencegah halaman blank seperti kasus "rakit").
 
 function navIds() {
-  const src = readFileSync(new URL("../src/lib/Navbar.svelte", import.meta.url), "utf8");
+  const src = readFileSync(new URL("../src/lib/shared/Navbar.svelte", import.meta.url), "utf8");
   return [...src.matchAll(/^\s*id: "([a-z0-9_-]+)",/gm)].map((m) => m[1]);
 }
 

@@ -1,24 +1,27 @@
-﻿<script>
+<script>
   import { onMount } from "svelte";
-  import Navbar from "./lib/Navbar.svelte";
-  import PhotoInput from "./lib/PhotoInput.svelte";
-  import Results from "./lib/Results.svelte";
-  import Chat from "./lib/Chat.svelte";
-  import Connectors from "./lib/Connectors.svelte";
-  import HistoryBar from "./lib/HistoryBar.svelte";
-  import CameraModal from "./lib/CameraModal.svelte";
-  import Hardware from "./lib/Hardware.svelte";
-  import NetworkConfig from "./lib/NetworkConfig.svelte";
-  import RackBuilder from "./lib/RackBuilder.svelte";
-  import Calculators from "./lib/Calculators.svelte";
-  import { analyzePhoto, ANALYSIS_STEPS } from "./lib/simulator.js";
-  import { fileToDataUrl, makeSamples, makeThumb } from "./lib/photos.js";
-  import { loadHistory, saveHistoryEntry, clearHistory } from "./lib/history.js";
-  import SettingsModal from "./lib/SettingsModal.svelte";
-  import ShareModal from "./lib/ShareModal.svelte";
-  import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "./lib/settings.js";
-  import ProjectBar from "./lib/ProjectBar.svelte";
-  import { loadProjects, saveProjects, newProject, autoProjectName, validateProjectName } from "./lib/projects.js";
+  import Navbar from "./lib/shared/Navbar.svelte";
+  import PhotoInput from "./lib/audit/PhotoInput.svelte";
+  import Results from "./lib/audit/Results.svelte";
+  import Chat from "./lib/audit/Chat.svelte";
+  import Connectors from "./lib/audit/Connectors.svelte";
+  import HistoryBar from "./lib/audit/HistoryBar.svelte";
+  import CameraModal from "./lib/audit/CameraModal.svelte";
+  import Hardware from "./lib/hardware/Hardware.svelte";
+  import NetworkConfig from "./lib/network/NetworkConfig.svelte";
+  import RackBuilder from "./lib/rack/RackBuilder.svelte";
+  import Calculators from "./lib/calculator/Calculators.svelte";
+  import { analyzePhoto, ANALYSIS_STEPS } from "./lib/audit/simulator.js";
+  import { analyzeWithBackend, backendUrl } from "./lib/audit/backend.js";
+  import { fileToDataUrl, makeSamples, makeThumb } from "./lib/core/photos.js";
+  import { loadHistory, saveHistoryEntry, clearHistory } from "./lib/audit/history.js";
+  import SettingsModal from "./lib/shared/SettingsModal.svelte";
+  import ShareModal from "./lib/shared/ShareModal.svelte";
+  import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "./lib/core/settings.js";
+  import ProjectBar from "./lib/shared/ProjectBar.svelte";
+  import { loadPrefs } from "./lib/core/prefs.svelte.js";
+  import { t } from "./lib/core/i18n.svelte.js";
+  import { loadProjects, saveProjects, newProject, autoProjectName, validateProjectName } from "./lib/shared/projects.js";
 
   let page = $state("home"); // "home" | "hardware" | "config" | "rakit" | "calculator"
 
@@ -29,6 +32,8 @@
   let result = $state(null);
   let tab = $state("ringkasan");
   let highlight = $state(null);
+  // Kotak hardware di foto: nomor "H1", "H2", ... dipakai juga oleh kartu & panah.
+  const hwBoxes = $derived((result?.hardware ?? []).map((h, i) => ({ nomor: "H" + (i + 1), tingkat: "hw", bbox: h.bbox })));
   let history = $state([]);
   let storageWarning = $state("");
   let showCamera = $state(false);
@@ -42,6 +47,7 @@
   let runToken = 0;
 
   onMount(() => {
+    loadPrefs(localStorage);
     history = loadHistory(localStorage).items;
     settings = loadSettings(localStorage);
     const loaded = loadProjects(localStorage);
@@ -69,8 +75,7 @@
   function persistProjects() {
     const r = saveProjects(localStorage, projects, currentProjectId);
     if (!r.ok) {
-      storageWarning =
-        "Project gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil, tapi bisa hilang saat refresh.";
+      storageWarning = t("app.warnProject");
     }
   }
 
@@ -164,6 +169,15 @@
     const totalMs = 2400;
     const per = totalMs / ANALYSIS_STEPS.length;
 
+    // Backend deteksi (opsional, VITE_API_URL). Jalan paralel dengan animasi langkah; kegagalan → simulasi.
+    const apiUrl = backendUrl();
+    const backendCall = apiUrl
+      ? analyzeWithBackend(photo, { apiUrl }).then(
+          (data) => ({ data }),
+          (error) => ({ error }),
+        )
+      : null;
+
     for (let i = 0; i < ANALYSIS_STEPS.length; i++) {
       if (token !== runToken) return;
       stepIdx = i;
@@ -171,13 +185,25 @@
       await new Promise((r) => setTimeout(r, per));
     }
     if (token !== runToken) return;
+
+    // Analisis nyata bisa lebih lama dari animasi: tahan di langkah terakhir sampai backend menjawab.
+    let backend = null;
+    let backendWarning = "";
+    if (backendCall) {
+      progress = 0.95;
+      const outcome = await backendCall;
+      if (token !== runToken) return;
+      if (outcome.error) backendWarning = t("app.warnBackend", { reason: outcome.error.message });
+      else backend = outcome.data;
+    }
     progress = 1;
 
     const key = `${photo.name}::${photo.dataUrl.length}::${photo.dataUrl.slice(-2048)}`;
-    result = analyzePhoto(key, photo.name);
+    result = analyzePhoto(key, photo.name, backend);
+    storageWarning = backendWarning;
     analyzing = false;
 
-    // Simpan ke riwayat (browser). Gagal tulis â†’ tampilkan peringatan.
+    // Simpan ke riwayat (browser). Gagal tulis → tampilkan peringatan.
     try {
       const thumb = await makeThumb(photo.dataUrl);
       const entry = {
@@ -194,12 +220,9 @@
       };
       const saved = saveHistoryEntry(localStorage, entry);
       history = saved.items;
-      storageWarning = saved.ok
-        ? ""
-        : "Riwayat gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil dan bisa diunduh.";
+      storageWarning = saved.ok ? backendWarning : t("app.warnHistory");
     } catch {
-      storageWarning =
-        "Riwayat gagal disimpan: penyimpanan browser tidak tersedia. Hasil saat ini tetap tampil dan bisa diunduh.";
+      storageWarning = t("app.warnHistoryNA");
     }
   }
 
@@ -219,7 +242,7 @@
   function clearAllHistory() {
     const r = clearHistory(localStorage);
     if (r.ok) history = [];
-    else storageWarning = "Riwayat gagal dihapus: penyimpanan browser tidak bisa ditulis.";
+    else storageWarning = t("app.warnClear");
   }
 </script>
 
@@ -227,8 +250,6 @@
   {page}
   onNav={(p) => (page = p)}
   onSettings={() => (showSettings = true)}
-  onShare={() => (showShare = true)}
-  shareDisabled={page !== "home"}
 />
 
 {#if page === "home"}
@@ -237,7 +258,7 @@
       <div class="warn-banner" role="alert">
         {storageWarning}
         <button class="btn-small btn-ghost" style="margin-left:10px" onclick={() => (storageWarning = "")}>
-          Tutup
+          {t("app.close")}
         </button>
       </div>
     {/if}
@@ -250,7 +271,7 @@
       onCreate={createProject}
       onRename={renameProject}
       onDelete={deleteProject}
-      onSettings={() => (showSettings = true)}
+      onShare={() => (showShare = true)}
     />
 
     <div class="workspace">
@@ -267,7 +288,7 @@
         {analyzing}
         {stepIdx}
         {progress}
-        boxes={result?.findings ?? []}
+        boxes={tab === "hardware" ? hwBoxes : (result?.findings ?? [])}
         {highlight}
         onPick={pickFile}
         onCamera={() => (showCamera = true)}
@@ -283,19 +304,24 @@
         onHighlight={(f) => (highlight = f)}
         onDownload={() => (showShare = true)}
       />
-      <Connectors active={!!result && tab === "temuan"} items={result?.findings ?? []} {highlight} />
+      <Connectors
+        active={!!result && (tab === "temuan" || tab === "hardware")}
+        items={tab === "hardware" ? hwBoxes : (result?.findings ?? [])}
+        {highlight}
+      />
     </div>
 
     <HistoryBar items={history} onOpen={openHistory} onClear={clearAllHistory} />
 
     <div class="footer-note">
-      NeatOps AI · tahap 1 frontend simulasi · kontrak hasil <code>simulator.js</code> dipakai ulang saat integrasi backend nanti.
+      <!-- eslint-disable-next-line svelte/no-at-html-tags -->
+      {@html t("app.footer")}
     </div>
   </main>
 {:else if page === "hardware"}
   <Hardware />
 {:else if page === "rakit"}
-  <RackBuilder onSettings={() => (showSettings = true)} />
+  <RackBuilder />
 {:else if page === "config"}
   <NetworkConfig />
 {:else if page === "calculator"}

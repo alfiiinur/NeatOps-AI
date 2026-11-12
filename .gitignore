@@ -1,0 +1,15 @@
+# Secrets
+.env
+
+# Python (infra backend)
+infra/.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Artefak labeling (dihasilkan scripts/prelabel.py dan scripts/to_yolo.py)
+infra/labeling/
+infra/dataset/
+infra/_tmp_*/
+infra/eval_cache/
+infra/out/

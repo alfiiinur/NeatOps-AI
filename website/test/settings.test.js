@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "../src/lib/settings.js";
+import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "../src/lib/core/settings.js";
 
 function memStorage(initial = {}) {
   const map = new Map(Object.entries(initial));

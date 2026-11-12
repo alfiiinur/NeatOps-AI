@@ -5,7 +5,7 @@ import {
   escapeHtml,
   tidySchematicSvg,
   buildPrintHtml,
-} from "../src/lib/report.js";
+} from "../src/lib/audit/report.js";
 
 function fakeResult() {
   return {

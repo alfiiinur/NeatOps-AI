@@ -14,9 +14,12 @@ import {
   calcPoe,
   calcCooling,
   calcUpsRuntime,
+  calcFoLinkBudget,
+  FO_SPLITTER_TABLE,
+  FO_FIBER_PRESETS,
   formatID,
   formatRp,
-} from "../src/lib/calculators.js";
+} from "../src/lib/calculator/calculators.js";
 
 describe("daya & arus", () => {
   it("1 fasa: P = V × I × cosφ", () => {
@@ -183,6 +186,90 @@ describe("pendingin & UPS", () => {
     const r = calcUpsRuntime({ volt: 12, ah: 9, batteries: 4, loadW: 800, efficiency: 0.9 });
     assert.equal(r.whNominal, 432);
     assert.ok(Math.abs(r.minutes - (388.8 / 800) * 60) < 1e-9);
+  });
+});
+
+describe("link budget fiber optik", () => {
+  const GPON = {
+    txDbm: 5,
+    rxSensDbm: -27,
+    fiberKm: 5,
+    attenPerKm: 0.25,
+    connectors: 4,
+    connLossDb: 0.5,
+    splices: 4,
+    spliceLossDb: 0.1,
+    splitterLossDb: 13.9, // 1:16
+    extraLossDb: 1,
+    safetyMarginDb: 3,
+  };
+
+  it("kasus GPON tipikal: total 18,55 dB, Rx −13,55 dBm, LULOS", () => {
+    const r = calcFoLinkBudget(GPON);
+    assert.ok(Math.abs(r.fiberLoss - 1.25) < 1e-9);
+    assert.ok(Math.abs(r.connectorLoss - 2) < 1e-9);
+    assert.ok(Math.abs(r.spliceLoss - 0.4) < 1e-9);
+    assert.ok(Math.abs(r.totalLoss - 18.55) < 1e-9);
+    assert.ok(Math.abs(r.rxDbm - -13.55) < 1e-9);
+    assert.ok(Math.abs(r.systemMargin - 13.45) < 1e-9);
+    assert.equal(r.status, "lolos");
+  });
+
+  it("jarak maksimum = (budget − margin − loss tetap) ÷ redaman/km", () => {
+    const r = calcFoLinkBudget(GPON);
+    // (32 − 3 − 17,3) ÷ 0,25 = 46,8 km
+    assert.ok(Math.abs(r.maxKm - 46.8) < 1e-9);
+  });
+
+  it("status gagal saat margin di bawah cadangan pengaman", () => {
+    const r = calcFoLinkBudget({
+      txDbm: 0,
+      rxSensDbm: -25,
+      fiberKm: 20,
+      attenPerKm: 0.35,
+      connectors: 2,
+      splices: 2,
+      splitterLossDb: 17.2, // 1:32
+      safetyMarginDb: 3,
+    });
+    assert.ok(Math.abs(r.totalLoss - 25.4) < 1e-9);
+    assert.ok(Math.abs(r.rxDbm - -25.4) < 1e-9);
+    assert.ok(r.systemMargin < 3);
+    assert.equal(r.status, "gagal");
+    assert.ok(r.maxKm < 20);
+  });
+
+  it("jarak nol & tanpa splitter tetap valid", () => {
+    const r = calcFoLinkBudget({
+      txDbm: 5,
+      rxSensDbm: -27,
+      fiberKm: 0,
+      attenPerKm: 0.25,
+      connectors: 2,
+      splices: 0,
+    });
+    assert.equal(r.fiberLoss, 0);
+    assert.ok(Math.abs(r.totalLoss - 1) < 1e-9);
+    assert.equal(r.status, "lolos");
+    assert.ok(r.maxKm > 100);
+  });
+
+  it("menolak input invalid", () => {
+    assert.throws(() => calcFoLinkBudget({ ...GPON, fiberKm: -1 }), /Panjang serat/);
+    assert.throws(() => calcFoLinkBudget({ ...GPON, attenPerKm: 0 }), /Redaman serat/);
+    assert.throws(() => calcFoLinkBudget({ ...GPON, connectors: -1 }), /konektor/);
+    assert.throws(() => calcFoLinkBudget({ ...GPON, splices: 1.5 }), /splice/);
+    assert.throws(() => calcFoLinkBudget({ ...GPON, txDbm: NaN }), /Tx/);
+    assert.throws(() => calcFoLinkBudget({ ...GPON, safetyMarginDb: -1 }), /pengaman/);
+  });
+
+  it("tabel splitter & preset serat konsisten", () => {
+    const losses = FO_SPLITTER_TABLE.map((s) => s.loss);
+    assert.deepEqual(losses, [...losses].sort((a, b) => a - b));
+    assert.equal(FO_SPLITTER_TABLE.find((s) => s.ratio === "1:16").loss, 13.9);
+    for (const p of FO_FIBER_PRESETS) {
+      assert.ok(p.attenPerKm > 0, `${p.id}: redaman harus > 0`);
+    }
   });
 });
 
