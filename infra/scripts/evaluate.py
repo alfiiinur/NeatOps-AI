@@ -20,9 +20,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.cables import CABLE_PROMPTS  # noqa: E402
-from app.detect import CLASS_BY_PROMPT, DEDUPE_IOU, MIN_CONFIDENCE  # noqa: E402
-from app.evaluation import (  # noqa: E402
+from app.vision.cables import CABLE_PROMPTS  # noqa: E402
+from app.vision.detect import CLASS_BY_PROMPT, DEDUPE_IOU, MIN_CONFIDENCE  # noqa: E402
+from app.workflows.evaluation import (  # noqa: E402
     cable_preds,
     dets_to_raw,
     evaluate,
@@ -33,8 +33,8 @@ from app.evaluation import (  # noqa: E402
     unit_preds,
     yolo_readiness,
 )
-from app.labeling import LABEL_CLASSES, image_basename  # noqa: E402
-from app.meta_client import MetaApiError, MetaClient, prepare_image  # noqa: E402
+from app.workflows.labeling import LABEL_CLASSES, image_basename  # noqa: E402
+from app.clients.meta_client import MetaApiError, MetaClient, prepare_image  # noqa: E402
 
 PROMPTS = [*CLASS_BY_PROMPT, *CABLE_PROMPTS]
 

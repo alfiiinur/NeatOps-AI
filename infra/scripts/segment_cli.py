@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image, ImageDraw  # noqa: E402
 
-from app.meta_client import MetaClient, prepare_image  # noqa: E402
+from app.clients.meta_client import MetaClient, prepare_image  # noqa: E402
 
 DEFAULT_CONCEPTS = ["network switch", "server", "patch panel", "UPS", "PDU", "network cable"]
 COLORS = ["#e5484d", "#0090ff", "#30a46c", "#f5a524", "#8e4ec6", "#12a594", "#d6409f"]

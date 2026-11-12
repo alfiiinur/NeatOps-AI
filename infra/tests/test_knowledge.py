@@ -1,4 +1,4 @@
-from app.knowledge import load_knowledge, load_knowledge_cached, relevant_context
+from app.clients.knowledge import load_knowledge, load_knowledge_cached, relevant_context
 
 
 def write(d, name, text):

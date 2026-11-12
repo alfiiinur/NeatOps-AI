@@ -3,8 +3,8 @@ import io
 from fastapi.testclient import TestClient
 from PIL import Image
 
-from app.geometry import Detection
-from app.main import app, get_meta_client
+from app.common.geometry import Detection
+from app.api.main import app, get_meta_client
 
 
 def jpeg_bytes() -> bytes:
@@ -76,3 +76,13 @@ def test_analyze_rack_u_param_overrides_estimate():
 def test_analyze_rejects_non_image():
     r = make_client().post("/analyze", files={"photo": ("x.txt", b"bukan gambar", "text/plain")})
     assert r.status_code == 400
+
+
+def test_analyze_reports_u_estimated_and_u_uncertain_fields():
+    files = {"photo": ("rak.jpg", jpeg_bytes(), "image/jpeg")}
+    body = make_client().post("/analyze", files=files).json()
+    assert body["rack"]["u_estimated"] is True
+    assert all(isinstance(h["u_uncertain"], bool) for h in body["hardware"])
+
+    fixed = make_client().post("/analyze?rack_u=12", files=files).json()
+    assert fixed["rack"]["u_estimated"] is False

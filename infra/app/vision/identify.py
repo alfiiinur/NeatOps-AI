@@ -5,14 +5,15 @@ import logging
 
 from pydantic import BaseModel, field_validator
 
+from ..clients.knowledge import relevant_context
+from ..clients.meta_client import MetaApiError, MetaClient
+from ..common.imaging import crop_region
 from .detect import Unit
-from .imaging import crop_region
-from .knowledge import relevant_context
-from .meta_client import MetaApiError, MetaClient
 
 log = logging.getLogger(__name__)
 
 CATEGORIES = ["Jaringan", "Konektivitas", "Keamanan", "Server", "Storage", "Daya", "Manajemen", "Aksesori", "Lainnya"]
+DEFAULT_CROP_MIN_WIDTH = 512
 DROP_CONFIDENCE = 0.7  # unit baru dibuang bila model yakin ini bukan perangkat rack
 CROP_PAD = 0.04
 
@@ -102,7 +103,7 @@ async def identify_unit(
     """Identifikasi satu unit. Kegagalan tidak boleh menjatuhkan seluruh analisis: kembalikan hasil kosong."""
     x, y, w, h = unit.bbox
     region = (x - CROP_PAD * w, y - CROP_PAD * h, w * (1 + 2 * CROP_PAD), h * (1 + 2 * CROP_PAD))
-    crop, _ = crop_region(jpeg, region, min_width=768)
+    crop, _ = crop_region(jpeg, region, min_width=crop_min_width(client))
     context = relevant_context(chunks, [unit.cls.prompt, unit.cls.nama, unit.cls.jenis])
     try:
         data = await client.chat_json(
@@ -132,22 +133,40 @@ async def identify_units(
     return kept
 
 
+SHELF_WORDS = ("shelf", "tray", "rak", "rack", "cabinet", "kabinet")
+
+
+def is_shelf_like(unit: Unit) -> bool:
+    """Muse menamai pembungkus ini shelf/rak/kabinet: perangkat di atasnya adalah perangkat sendiri."""
+    name = (unit.ident.nama if unit.ident else "").lower()
+    return any(w in name for w in SHELF_WORDS)
+
+
 class GapVerdict(BaseModel):
     isi: str = "tidak_jelas"
     catatan: str = ""
 
 
-async def classify_slots(client: MetaClient, jpeg: bytes, slots: list[dict]) -> None:
+def crop_min_width(client) -> int:
+    """Lebar minimum crop untuk Muse (Settings.crop_min_width); klien palsu di tes memakai default."""
+    return getattr(getattr(client, "settings", None), "crop_min_width", DEFAULT_CROP_MIN_WIDTH)
+
+
+async def classify_slots(client: MetaClient, jpeg: bytes, slots: list[dict], min_height: float = 0.0) -> None:
     """Tambahkan `status` ke tiap slot kosong: 'kosong' | 'terisi' | 'tidak_jelas'.
 
     Celah di antara kotak belum tentu slot kosong: bisa cable manager, patch panel penuh kabel, atau perangkat yang
     tak terdeteksi. Muse memeriksa potongan gambarnya; bila gagal, statusnya 'tidak_jelas' (bukan 'kosong').
+    Slot lebih rendah dari `min_height` (ternormalisasi; biasanya tinggi 1U) tidak diperiksa: terlalu kecil untuk
+    dinilai dan hanya membuang panggilan, jadi langsung 'tidak_jelas'.
     """
 
     async def one(slot: dict) -> str:
         x, y, w, h = slot["bbox"]
+        if h < min_height:
+            return "tidak_jelas"
         pad = 0.15 * h
-        crop, _ = crop_region(jpeg, (x, y - pad, w, h + 2 * pad), min_width=768)
+        crop, _ = crop_region(jpeg, (x, y - pad, w, h + 2 * pad), min_width=crop_min_width(client))
         try:
             data = await client.chat_json(
                 system=GAP_SYSTEM,

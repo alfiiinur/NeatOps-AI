@@ -6,9 +6,9 @@ import xml.etree.ElementTree as ET
 import pytest
 from PIL import Image
 
-from app.cables import Cable, CableCluster
-from app.detect import CLASS_BY_PROMPT, Unit
-from app.labeling import (
+from app.vision.cables import Cable, CableCluster
+from app.vision.detect import CLASS_BY_PROMPT, Unit
+from app.workflows.labeling import (
     CLASS_ID,
     LABEL_CLASSES,
     convert_export_to_yolo,
@@ -19,7 +19,7 @@ from app.labeling import (
     task_from_analysis,
     yolo_line,
 )
-from app.pipeline import RackAnalysis
+from app.workflows.pipeline import RackAnalysis
 
 SWITCH = CLASS_BY_PROMPT["network switch"]
 UPS = CLASS_BY_PROMPT["UPS"]

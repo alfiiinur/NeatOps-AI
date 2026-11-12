@@ -2,7 +2,7 @@ import io
 
 from PIL import Image
 
-from app.cables import (
+from app.vision.cables import (
     Cable,
     CableAssessment,
     CableCluster,
@@ -11,9 +11,9 @@ from app.cables import (
     link_units,
     to_cables,
 )
-from app.detect import CLASS_BY_PROMPT, Unit
-from app.findings import build_cable_findings
-from app.geometry import Detection
+from app.vision.detect import CLASS_BY_PROMPT, Unit
+from app.vision.findings import build_cable_findings
+from app.common.geometry import Detection
 
 SWITCH = CLASS_BY_PROMPT["network switch"]
 PATCH = CLASS_BY_PROMPT["patch panel"]
@@ -137,7 +137,7 @@ async def test_assess_clusters_survives_model_failure_and_limits_calls():
 
         async def chat_json(self, **kw):
             Boom.calls += 1
-            raise __import__("app.meta_client", fromlist=["MetaApiError"]).MetaApiError("down")
+            raise __import__("app.clients.meta_client", fromlist=["MetaApiError"]).MetaApiError("down")
 
     buf = io.BytesIO()
     Image.new("RGB", (400, 400), "gray").save(buf, format="JPEG")
@@ -145,3 +145,18 @@ async def test_assess_clusters_survives_model_failure_and_limits_calls():
     await assess_clusters(Boom(), buf.getvalue(), clusters)
     assert Boom.calls == 4  # dibatasi MAX_ASSESSED_CLUSTERS
     assert all(c.assessment is None for c in clusters)
+
+
+async def test_assess_clusters_skips_very_small_clusters():
+    class Counter:
+        calls = 0
+
+        async def chat_json(self, **kwargs):
+            Counter.calls += 1
+            raise RuntimeError("tidak boleh dipanggil untuk kelompok kecil")
+
+    buf = io.BytesIO()
+    Image.new("RGB", (400, 400), "gray").save(buf, format="JPEG")
+    tiny = CableCluster((0.1, 0.1, 0.03, 0.03), [cable(0.1, 0.1, 0.03, 0.03)])  # luas 0,0009
+    await assess_clusters(Counter(), buf.getvalue(), [tiny])
+    assert Counter.calls == 0 and tiny.assessment is None

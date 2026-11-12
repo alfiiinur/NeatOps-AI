@@ -8,8 +8,8 @@ import io
 import pytest
 from PIL import Image, ImageDraw, ImageFont
 
-from app.config import get_settings
-from app.meta_client import MetaClient
+from app.core.config import get_settings
+from app.clients.meta_client import MetaClient
 
 pytestmark = pytest.mark.skipif(not get_settings().model_api_key, reason="MODEL_API_KEY belum diisi")
 
@@ -42,8 +42,8 @@ def labeled_panel() -> bytes:
 
 
 async def test_live_muse_identifies_text_on_panel():
-    from app.detect import CLASS_BY_PROMPT, Unit
-    from app.identify import identify_unit
+    from app.vision.detect import CLASS_BY_PROMPT, Unit
+    from app.vision.identify import identify_unit
 
     unit = Unit(CLASS_BY_PROMPT["network switch"], (0.0, 0.0, 1.0, 1.0), 0.9)
     ident = await identify_unit(MetaClient(), labeled_panel(), unit, [])

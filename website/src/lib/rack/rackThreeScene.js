@@ -7,7 +7,6 @@ import {
   layoutUnits,
   cameraPreset,
   easeInOutCubic,
-  closeupDistance,
   badgeVisibleFront,
 } from "./rackThree.js";
 import { parseSvgArt } from "./rackIso.js";
@@ -25,7 +24,10 @@ async function svgTexture(svgString, faceAspect, maxAniso) {
     if (!art) return null;
     const rw = TEX_W;
     const rh = Math.max(8, Math.round((TEX_W * art.h) / art.w));
-    const sized = svgString.replace("<svg ", `<svg width="${rw}" height="${rh}" `);
+    const sized = svgString.replace(
+      "<svg ",
+      `<svg width="${rw}" height="${rh}" `,
+    );
     const img = new Image();
     const loaded = new Promise((res, rej) => {
       img.onload = res;
@@ -87,7 +89,11 @@ function railTexture(units, totalH) {
  * slots: [{ key,nama,merek,desc,color,unitHeight,uStart,uEnd,watt,auto,art }]
  */
 export function createRackScene(canvas, opts) {
-  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  const renderer = new THREE.WebGLRenderer({
+    canvas,
+    antialias: true,
+    alpha: true,
+  });
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFShadowMap;
@@ -156,6 +162,8 @@ export function createRackScene(canvas, opts) {
   let showLabels = true;
   let camTween = null;
   const yTweens = new Map(); // key -> { fromY, toY, t0, dur }
+  const zTweens = new Map(); // key -> { fromZ, toZ, t0, dur } (unit ditarik keluar)
+  const PULL_OUT = 1.9;
   let raf = 0;
   let disposed = false;
   let viewW = 1;
@@ -174,7 +182,11 @@ export function createRackScene(canvas, opts) {
   function disposeObject(root) {
     root.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
-      const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+      const mats = Array.isArray(o.material)
+        ? o.material
+        : o.material
+          ? [o.material]
+          : [];
       for (const m of mats) {
         if (m.map) m.map.dispose();
         m.dispose();
@@ -190,38 +202,76 @@ export function createRackScene(canvas, opts) {
     }
     cabinet = new THREE.Group();
     const H = layout.totalH;
-    const metal = new THREE.MeshStandardMaterial({ color: 0x23262c, roughness: 0.45, metalness: 0.75 });
-    const darkMetal = new THREE.MeshStandardMaterial({ color: 0x16181d, roughness: 0.6, metalness: 0.6 });
+    const metal = new THREE.MeshStandardMaterial({
+      color: 0x23262c,
+      roughness: 0.45,
+      metalness: 0.75,
+    });
+    const darkMetal = new THREE.MeshStandardMaterial({
+      color: 0x16181d,
+      roughness: 0.6,
+      metalness: 0.6,
+    });
     const postGeo = new THREE.BoxGeometry(0.3, H + 0.7, 0.3);
     for (const sx of [-1, 1]) {
       for (const sz of [-1, 1]) {
         const post = new THREE.Mesh(postGeo, metal);
-        post.position.set(sx * (UNIT_W / 2 + 0.18), H / 2, sz * (UNIT_D / 2 + 0.18));
+        post.position.set(
+          sx * (UNIT_W / 2 + 0.18),
+          H / 2,
+          sz * (UNIT_D / 2 + 0.18),
+        );
         post.castShadow = post.receiveShadow = true;
         cabinet.add(post);
       }
     }
-    const top = new THREE.Mesh(new THREE.BoxGeometry(UNIT_W + 0.9, 0.25, UNIT_D + 0.9), darkMetal);
+    const top = new THREE.Mesh(
+      new THREE.BoxGeometry(UNIT_W + 0.9, 0.25, UNIT_D + 0.9),
+      darkMetal,
+    );
     top.position.y = H + 0.47;
     top.castShadow = true;
-    const plinth = new THREE.Mesh(new THREE.BoxGeometry(UNIT_W + 1.1, 0.36, UNIT_D + 1.1), darkMetal);
+    const plinth = new THREE.Mesh(
+      new THREE.BoxGeometry(UNIT_W + 1.1, 0.36, UNIT_D + 1.1),
+      darkMetal,
+    );
     plinth.position.y = -0.18;
     plinth.receiveShadow = true;
     cabinet.add(top, plinth);
     // Rel depan kiri-kanan dengan lubang U sejajar unit.
     const railTex = railTexture(layout.items, Math.max(H, 0.001));
-    const railSide = new THREE.MeshStandardMaterial({ color: 0x22262d, roughness: 0.5, metalness: 0.7 });
-    const railFace = new THREE.MeshStandardMaterial({ map: railTex, roughness: 0.55, metalness: 0.5 });
+    const railSide = new THREE.MeshStandardMaterial({
+      color: 0x22262d,
+      roughness: 0.5,
+      metalness: 0.7,
+    });
+    const railFace = new THREE.MeshStandardMaterial({
+      map: railTex,
+      roughness: 0.55,
+      metalness: 0.5,
+    });
     const railGeo = new THREE.BoxGeometry(0.34, H, 0.24);
     for (const sx of [-1, 1]) {
-      const rail = new THREE.Mesh(railGeo, [railSide, railSide, railSide, railSide, railFace, railSide]);
+      const rail = new THREE.Mesh(railGeo, [
+        railSide,
+        railSide,
+        railSide,
+        railSide,
+        railFace,
+        railSide,
+      ]);
       rail.position.set(sx * (UNIT_W / 2 + 0.02), H / 2, UNIT_D / 2 + 0.02);
       rail.castShadow = true;
       cabinet.add(rail);
     }
     floorGroup.position.y = -0.36;
     const d = Math.max(H, UNIT_W) * 0.85 + 3;
-    Object.assign(key.shadow.camera, { left: -d, right: d, top: d, bottom: -d });
+    Object.assign(key.shadow.camera, {
+      left: -d,
+      right: d,
+      top: d,
+      bottom: -d,
+    });
     key.shadow.camera.updateProjectionMatrix();
     key.target.position.set(0, H / 2, 0);
     scene.add(cabinet);
@@ -240,8 +290,16 @@ export function createRackScene(canvas, opts) {
       roughness: 0.6,
       metalness: 0.4,
     });
-    const dark = new THREE.MeshStandardMaterial({ color: CHASSIS, roughness: 0.7, metalness: 0.4 });
-    const front = new THREE.MeshStandardMaterial({ color: 0x14161a, roughness: 0.5, metalness: 0.25 });
+    const dark = new THREE.MeshStandardMaterial({
+      color: CHASSIS,
+      roughness: 0.7,
+      metalness: 0.4,
+    });
+    const front = new THREE.MeshStandardMaterial({
+      color: 0x14161a,
+      roughness: 0.5,
+      metalness: 0.25,
+    });
     return { side, topm, dark, front };
   }
 
@@ -249,24 +307,39 @@ export function createRackScene(canvas, opts) {
     const h = Math.max(item.height - GAP, 0.2);
     const group = new THREE.Group();
     const mats = unitMats(slot.color || "#666666");
-    const mesh = new THREE.Mesh(
-      new THREE.BoxGeometry(UNIT_W, h, UNIT_D),
-      [mats.side, mats.side, mats.topm, mats.dark, mats.front, mats.dark],
-    );
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(UNIT_W, h, UNIT_D), [
+      mats.side,
+      mats.side,
+      mats.topm,
+      mats.dark,
+      mats.front,
+      mats.dark,
+    ]);
     mesh.castShadow = mesh.receiveShadow = true;
     mesh.userData.key = slot.key;
     group.add(mesh);
     group.position.set(0, item.yCenter, 0);
     group.userData.key = slot.key;
     scene.add(group);
-    const entry = { group, frontMat: mats.front, baseColor: slot.color || "#666666", yCur: item.yCenter, height: item.height };
+    const entry = {
+      group,
+      frontMat: mats.front,
+      baseColor: slot.color || "#666666",
+      yCur: item.yCenter,
+      zCur: 0,
+      height: item.height,
+    };
     units.set(slot.key, entry);
     // Tekstur depan async; abaikan bila unit sudah diganti.
     const art = slot.art;
     if (art) {
       const token = { dead: false };
       entry.texToken = token;
-      svgTexture(art, UNIT_W / h, renderer.capabilities.getMaxAnisotropy()).then((tex) => {
+      svgTexture(
+        art,
+        UNIT_W / h,
+        renderer.capabilities.getMaxAnisotropy(),
+      ).then((tex) => {
         if (token.dead || !tex || disposed) {
           tex?.dispose();
           return;
@@ -295,7 +368,11 @@ export function createRackScene(canvas, opts) {
     for (const c of chans) {
       const chan = new THREE.Mesh(
         new THREE.CylinderGeometry(0.09, 0.09, Math.max(H - 0.4, 1), 10),
-        new THREE.MeshStandardMaterial({ color: c.color, roughness: 0.7, metalness: 0.1 }),
+        new THREE.MeshStandardMaterial({
+          color: c.color,
+          roughness: 0.7,
+          metalness: 0.1,
+        }),
       );
       chan.position.set(c.x, H / 2, UNIT_D / 2 - 0.6);
       cablesGroup.add(chan);
@@ -315,13 +392,29 @@ export function createRackScene(canvas, opts) {
       const droop = 0.55 + (n % 3) * 0.22;
       const curve = new THREE.CatmullRomCurve3([
         new THREE.Vector3(sx * (UNIT_W / 2 - 0.5), y0, UNIT_D / 2 + 0.03),
-        new THREE.Vector3(sx * (UNIT_W / 2 + 0.55), y0 - droop * 0.4, UNIT_D / 2 - 0.1),
-        new THREE.Vector3(sx * (UNIT_W / 2 + 1.0), y0 - droop, UNIT_D / 2 - 0.6),
-        new THREE.Vector3(sx * (UNIT_W / 2 + 1.0), Math.max(0.4, y0 - droop - 1.2), UNIT_D / 2 - 0.6),
+        new THREE.Vector3(
+          sx * (UNIT_W / 2 + 0.55),
+          y0 - droop * 0.4,
+          UNIT_D / 2 - 0.1,
+        ),
+        new THREE.Vector3(
+          sx * (UNIT_W / 2 + 1.0),
+          y0 - droop,
+          UNIT_D / 2 - 0.6,
+        ),
+        new THREE.Vector3(
+          sx * (UNIT_W / 2 + 1.0),
+          Math.max(0.4, y0 - droop - 1.2),
+          UNIT_D / 2 - 0.6,
+        ),
       ]);
       const tube = new THREE.Mesh(
         new THREE.TubeGeometry(curve, 32, 0.045, 8, false),
-        new THREE.MeshStandardMaterial({ color: isPower ? 0x2a9d5c : 0x3b82d6, roughness: 0.75, metalness: 0.05 }),
+        new THREE.MeshStandardMaterial({
+          color: isPower ? 0x2a9d5c : 0x3b82d6,
+          roughness: 0.75,
+          metalness: 0.05,
+        }),
       );
       cablesGroup.add(tube);
     }
@@ -349,7 +442,8 @@ export function createRackScene(canvas, opts) {
 
   function stepTweens(now) {
     if (camTween) {
-      const k = camTween.dur <= 0 ? 1 : Math.min(1, (now - camTween.t0) / camTween.dur);
+      const k =
+        camTween.dur <= 0 ? 1 : Math.min(1, (now - camTween.t0) / camTween.dur);
       const e = easeInOutCubic(k);
       camera.position.lerpVectors(camTween.fromPos, camTween.toPos, e);
       controls.target.lerpVectors(camTween.fromTarget, camTween.toTarget, e);
@@ -357,6 +451,18 @@ export function createRackScene(canvas, opts) {
         camTween = null;
         controls.enabled = true;
       }
+    }
+    for (const [key, tw] of zTweens) {
+      const entry = units.get(key);
+      if (!entry) {
+        zTweens.delete(key);
+        continue;
+      }
+      const k = tw.dur <= 0 ? 1 : Math.min(1, (now - tw.t0) / tw.dur);
+      const e = easeInOutCubic(k);
+      entry.zCur = tw.fromZ + (tw.toZ - tw.fromZ) * e;
+      entry.group.position.z = entry.zCur;
+      if (k >= 1) zTweens.delete(key);
     }
     for (const [key, tw] of yTweens) {
       const entry = units.get(key);
@@ -376,16 +482,29 @@ export function createRackScene(canvas, opts) {
     return Math.max(10, layout.totalH * 1.12);
   }
 
+  function pullUnit(key, toZ) {
+    const entry = units.get(key);
+    if (!entry) return;
+    zTweens.set(key, {
+      fromZ: entry.zCur,
+      toZ,
+      t0: performance.now(),
+      dur: reduceMotion ? 0 : 650,
+    });
+  }
+
   function setSelected(key) {
     if (selectedKey && units.has(selectedKey)) {
       units.get(selectedKey).frontMat.emissive.set(0x000000);
       units.get(selectedKey).frontMat.emissiveIntensity = 0;
+      if (selectedKey !== key) pullUnit(selectedKey, 0);
     }
     selectedKey = key;
     if (key && units.has(key)) {
       const entry = units.get(key);
       entry.frontMat.emissive.set(entry.baseColor);
       entry.frontMat.emissiveIntensity = 0.45;
+      pullUnit(key, PULL_OUT);
     }
   }
 
@@ -396,9 +515,17 @@ export function createRackScene(canvas, opts) {
     const dir = camera.position.clone().sub(controls.target);
     if (dir.lengthSq() < 1e-6) dir.set(0.5, 0.35, 0.75);
     dir.normalize();
-    const dist = closeupDistance(entry.height);
-    const target = new THREE.Vector3(0, entry.yCur, 0);
-    tweenCam(target.clone().addScaledVector(dir, dist).toArray(), target.toArray(), 850);
+    // Jarak pas: seluruh lebar unit + sedikit konteks rak terlihat (bukan closeup).
+    const tanV = Math.tan((camera.fov * Math.PI) / 360);
+    const distW = (UNIT_W * 1.5) / 2 / (tanV * Math.max(camera.aspect, 0.3));
+    const distH = (entry.height * 3) / 2 / tanV;
+    const dist = Math.max(distW, distH, 10);
+    const target = new THREE.Vector3(0, entry.yCur, PULL_OUT * 0.6);
+    tweenCam(
+      target.clone().addScaledVector(dir, dist).toArray(),
+      target.toArray(),
+      850,
+    );
   }
 
   function clearSelection() {
@@ -425,7 +552,12 @@ export function createRackScene(canvas, opts) {
         entry = buildUnit(slot, item);
       } else if (Math.abs(entry.yCur - item.yCenter) > 1e-6) {
         if (animate && !reduceMotion) {
-          yTweens.set(item.key, { fromY: entry.yCur, toY: item.yCenter, t0: performance.now(), dur: 480 });
+          yTweens.set(item.key, {
+            fromY: entry.yCur,
+            toY: item.yCenter,
+            t0: performance.now(),
+            dur: 480,
+          });
         } else {
           entry.yCur = item.yCenter;
           entry.group.position.y = item.yCenter;
@@ -447,7 +579,10 @@ export function createRackScene(canvas, opts) {
   }
 
   function setView(name) {
-    const { position, target } = cameraPreset(name, { centerY, dist: baseDist });
+    const { position, target } = cameraPreset(name, {
+      centerY,
+      dist: baseDist,
+    });
     tweenCam(position, target, 900);
   }
 
@@ -467,10 +602,15 @@ export function createRackScene(canvas, opts) {
         el.style.display = "none";
         continue;
       }
-      tmpW.set(0, entry.yCur + entry.height * 0.18, UNIT_D / 2 + 0.15);
+      tmpW.set(
+        0,
+        entry.yCur + entry.height * 0.18,
+        entry.zCur + UNIT_D / 2 + 0.15,
+      );
       tmpV.copy(tmpW).applyMatrix4(camera.matrixWorldInverse);
       const behind = tmpV.z > -0.1;
-      const facing = showLabels && badgeVisibleFront(camPos, [0, entry.yCur, 0]);
+      const facing =
+        showLabels && badgeVisibleFront(camPos, [0, entry.yCur, 0]);
       if (!facing || behind) {
         el.style.display = "none";
         continue;
@@ -514,7 +654,8 @@ export function createRackScene(canvas, opts) {
       const dy = e.clientY - downPos[1];
       const quick = performance.now() - downTime < 600;
       downPos = null;
-      if (quick && dx * dx + dy * dy < 36) opts.onSelect?.(pickAt(e.clientX, e.clientY));
+      if (quick && dx * dx + dy * dy < 36)
+        opts.onSelect?.(pickAt(e.clientX, e.clientY));
     },
     { signal: aborter.signal },
   );
@@ -562,7 +703,10 @@ export function createRackScene(canvas, opts) {
   setSlots(opts.slots ?? [], { animate: false });
   resize();
   {
-    const { position, target } = cameraPreset("perspektif", { centerY, dist: baseDist });
+    const { position, target } = cameraPreset("perspektif", {
+      centerY,
+      dist: baseDist,
+    });
     camera.position.set(...position);
     controls.target.set(...target);
     controls.update();
@@ -598,7 +742,11 @@ export function createRackScene(canvas, opts) {
       controls.dispose();
       scene.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
-        const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
+        const mats = Array.isArray(o.material)
+          ? o.material
+          : o.material
+            ? [o.material]
+            : [];
         for (const m of mats) {
           if (m.map) m.map.dispose();
           m.dispose();

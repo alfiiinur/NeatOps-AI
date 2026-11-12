@@ -15,11 +15,12 @@ from meta_sam_parser import parse_image_stream, records_of_kind
 from openai import AsyncOpenAI
 from PIL import Image, ImageOps
 
-from .config import Settings, get_settings
-from .geometry import Detection, pixel_box_to_norm
+from ..common.geometry import Detection, pixel_box_to_norm
+from ..core.cache import JsonCache, make_key, shared_cache
+from ..core.config import Settings, get_settings
 
 SAM_MODEL = "sam-3.1"
-MAX_SIDE = 2048
+MAX_SIDE = 1536  # sama dengan default Settings.max_image_side
 
 
 class MetaApiError(RuntimeError):
@@ -53,8 +54,17 @@ def to_data_url(jpeg_bytes: bytes) -> str:
 
 
 class MetaClient:
-    def __init__(self, settings: Settings | None = None, client: Any = None, concurrency: int = 4):
+    def __init__(
+        self,
+        settings: Settings | None = None,
+        client: Any = None,
+        concurrency: int = 4,
+        cache: JsonCache | None = None,
+    ):
         self.settings = settings or get_settings()
+        self.cache = cache or shared_cache(
+            self.settings.cache_enabled, str(self.settings.cache_dir) if self.settings.cache_enabled else None
+        )
         if client is None:
             if not self.settings.model_api_key:
                 raise MetaApiError(
@@ -65,6 +75,8 @@ class MetaClient:
                 api_key=self.settings.model_api_key,
             )
         self.client = client
+        # Hitungan panggilan nyata ke API vs jawaban dari cache (untuk memantau pemakaian token).
+        self.stats = {"sam": 0, "muse": 0, "cached": 0}
         self._sem = asyncio.Semaphore(concurrency)
         self.retry_delay = 0.8  # detik; digandakan tiap percobaan ulang
 
@@ -77,8 +89,15 @@ class MetaClient:
         with_masks: bool = True,
     ) -> list[Detection]:
         """Segmentasi satu konsep pada satu gambar. Mengembalikan deteksi dengan bbox ternormalisasi."""
-        jpeg, width, height = prepared or prepare_image(image_bytes)
+        jpeg, width, height = prepared or prepare_image(image_bytes, self.settings.max_image_side)
+        # Cache hanya menyimpan box + confidence (mask tidak dipakai respons dan berat untuk disimpan).
+        ckey = make_key(SAM_MODEL, concept, jpeg)
+        cached = self.cache.get("sam", ckey)
+        if cached is not None:
+            self.stats["cached"] += 1
+            return [Detection(concept, tuple(d["bbox"]), d["confidence"]) for d in cached]
         async with self._sem:
+            self.stats["sam"] += 1
             try:
                 events = await self.client.responses.create(
                     model=SAM_MODEL,
@@ -116,6 +135,7 @@ class MetaClient:
                     mask=m.mask if m is not None else None,
                 )
             )
+        self.cache.set("sam", ckey, [{"bbox": list(d.bbox), "confidence": d.confidence} for d in detections])
         return detections
 
     async def chat_json(
@@ -130,6 +150,14 @@ class MetaClient:
         retries: int = 2,
     ) -> dict:
         """Tanya Muse tentang satu gambar dan terima JSON yang dijamin sesuai `schema` (structured output)."""
+        used_model = model or self.settings.identify_model
+        ckey = make_key(
+            used_model, schema_name, json.dumps(schema, sort_keys=True), system, user_text, image_jpeg
+        )
+        cached = self.cache.get("muse", ckey)
+        if isinstance(cached, dict):
+            self.stats["cached"] += 1
+            return cached
         messages = [
             {"role": "system", "content": system},
             {
@@ -144,20 +172,63 @@ class MetaClient:
         for attempt in range(retries + 1):
             try:
                 async with self._sem:
+                    self.stats["muse"] += 1
                     resp = await self.client.chat.completions.create(
-                        model=model or self.settings.identify_model,
+                        model=used_model,
                         messages=messages,
                         response_format={
                             "type": "json_schema",
                             "json_schema": {"name": schema_name, "schema": schema},
                         },
                     )
-                return _parse_json_content(resp)
+                data = _parse_json_content(resp)
+                self.cache.set("muse", ckey, data)
+                return data
             except Exception as e:  # jaringan, rate limit, atau JSON rusak: coba lagi dengan jeda
                 last = e
                 if attempt < retries:
                     await asyncio.sleep(self.retry_delay * (2**attempt))
         raise MetaApiError(f"Muse gagal setelah {retries + 1} percobaan: {last}") from last
+
+    async def chat_text(
+        self,
+        *,
+        system: str,
+        messages: list[dict],
+        images: list[bytes] | None = None,
+        model: str | None = None,
+        reasoning_effort: str | None = None,
+        retries: int = 1,
+    ) -> str:
+        """Percakapan biasa (tanpa cache). `messages` berisi role user/assistant.
+
+        `images` (JPEG) dilampirkan ke pesan user terakhir.
+        """
+        used_model = model or self.settings.identify_model
+        full = [{"role": "system", "content": system}, *messages]
+        if images:
+            last_user = dict(full[-1])
+            last_user["content"] = [
+                {"type": "text", "text": last_user["content"]},
+                *({"type": "image_url", "image_url": {"url": to_data_url(img)}} for img in images),
+            ]
+            full[-1] = last_user
+        last: Exception | None = None
+        for attempt in range(retries + 1):
+            try:
+                async with self._sem:
+                    self.stats["muse"] += 1
+                    extra = {"extra_body": {"reasoning_effort": reasoning_effort}} if reasoning_effort else {}
+                    resp = await self.client.chat.completions.create(model=used_model, messages=full, **extra)
+                text = (resp.choices[0].message.content or "").strip()
+                if not text:
+                    raise ValueError("jawaban kosong")
+                return text
+            except Exception as e:
+                last = e
+                if attempt < retries:
+                    await asyncio.sleep(self.retry_delay * (2**attempt))
+        raise MetaApiError(f"Muse gagal menjawab chat: {last}") from last
 
     async def segment_many(
         self,
@@ -167,7 +238,7 @@ class MetaClient:
         prepared: tuple[bytes, int, int] | None = None,
     ) -> dict[str, list[Detection]]:
         """Jalankan banyak konsep paralel (dibatasi semaphore). Gambar disiapkan sekali."""
-        prepared = prepared or prepare_image(image_bytes)
+        prepared = prepared or prepare_image(image_bytes, self.settings.max_image_side)
         results = await asyncio.gather(
             *(self.segment(image_bytes, c, prepared=prepared) for c in concepts)
         )

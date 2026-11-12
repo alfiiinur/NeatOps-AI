@@ -9,9 +9,9 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from itertools import product
 
-from .cables import CABLE_PROMPTS, to_cables
-from .detect import CLASS_BY_PROMPT, DEDUPE_IOU, MIN_CONFIDENCE, Unit, clean_units, iou, to_units
-from .geometry import BBox, Detection
+from ..vision.cables import CABLE_PROMPTS, to_cables
+from ..vision.detect import CLASS_BY_PROMPT, DEDUPE_IOU, MIN_CONFIDENCE, Unit, clean_units, iou, to_units
+from ..common.geometry import BBox, Detection
 from .labeling import CABLE_LABELS, pick_results
 
 AGNOSTIC = "(semua kelas)"

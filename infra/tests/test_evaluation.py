@@ -1,6 +1,6 @@
 import pytest
 
-from app.evaluation import (
+from app.workflows.evaluation import (
     AGNOSTIC,
     Box,
     cable_preds,
@@ -14,8 +14,8 @@ from app.evaluation import (
     unit_preds,
     yolo_readiness,
 )
-from app.geometry import Detection
-from app.labeling import LABEL_CLASSES, rect_result
+from app.common.geometry import Detection
+from app.workflows.labeling import LABEL_CLASSES, rect_result
 
 A = (0.1, 0.1, 0.8, 0.1)
 B = (0.1, 0.3, 0.8, 0.1)
@@ -96,7 +96,7 @@ def raw(*dets):
 
 
 def test_unit_preds_apply_threshold_and_nms_overrides():
-    r = raw(("network switch", A, 0.9), ("network switch", (0.1, 0.102, 0.8, 0.1), 0.4), ("UPS", B, 0.35))
+    r = raw(("network switch", A, 0.9), ("network switch", (0.2, 0.102, 0.8, 0.1), 0.4), ("UPS", B, 0.35))
     default = unit_preds(r)
     assert sorted(b.label for b in default) == ["Switch", "UPS"]  # duplikat Switch dibuang NMS
     strict = unit_preds(r, min_conf=0.5)

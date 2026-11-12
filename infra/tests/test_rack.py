@@ -1,6 +1,6 @@
 import pytest
 
-from app.rack import PANEL_MM, U_MM, build_grid, find_gaps, gap_to_slot, locate, reference_width
+from app.vision.rack import PANEL_MM, U_MM, build_grid, find_gaps, gap_to_slot, locate, reference_width
 
 W = H = 1000
 U_NORM = 0.8 * (U_MM / PANEL_MM)  # tinggi 1U ternormalisasi untuk panel selebar 0.8 pada gambar persegi
@@ -72,3 +72,32 @@ def test_unrelated_rack_box_is_ignored():
     far = (0.0, 0.8, 1.0, 0.15)  # tidak membungkus unit
     grid = build_grid(boxes, W, H, rack_bbox=far)
     assert grid.top == pytest.approx(boxes[0][1])
+
+
+def test_normal_units_are_not_flagged_uncertain():
+    from app.vision.rack import u_uncertain
+
+    boxes = [unit(0), unit(1, 2), unit(3), unit(4), unit(5)]
+    grid = build_grid(boxes, W, H)
+    assert not any(u_uncertain(b, grid) for b in boxes)
+
+
+def test_tall_tower_unit_is_flagged_uncertain_and_size_is_capped():
+    from app.vision.rack import u_uncertain
+
+    # UPS tower setinggi 10U di rak yang total 12U: bukan panel U biasa.
+    rack = [unit(i) for i in range(2)]
+    tower = unit(2, 10)
+    grid = build_grid([*rack, tower], W, H)
+    assert u_uncertain(tower, grid)
+    start, size = locate(tower, grid)
+    assert 1 <= size <= grid.total_u and start >= 1
+
+
+def test_box_beyond_rack_bounds_is_uncertain():
+    from app.vision.rack import u_uncertain
+
+    boxes = [unit(0), unit(1), unit(2)]
+    grid = build_grid(boxes, W, H)
+    below = (0.1, grid.bottom + 0.5 * grid.u_h, 0.8, 2 * grid.u_h)  # menjorok ke bawah rak
+    assert u_uncertain(below, grid)

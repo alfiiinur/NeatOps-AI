@@ -1,7 +1,7 @@
 from fastapi.testclient import TestClient
 
-from app.config import Settings
-from app.main import app
+from app.core.config import Settings
+from app.api.main import app
 
 
 def test_health_ok():

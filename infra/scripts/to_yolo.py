@@ -12,7 +12,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from app.labeling import convert_export_to_yolo  # noqa: E402
+from app.workflows.labeling import convert_export_to_yolo  # noqa: E402
 
 
 def main() -> None:

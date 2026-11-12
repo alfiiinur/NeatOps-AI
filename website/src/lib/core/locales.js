@@ -25,9 +25,11 @@ export const ID = {
   "set.themeName.rose": "Mawar",
   "set.themeName.orange": "Oranye",
   "set.language": "Bahasa",
-  "set.appearanceNote": "Tema dan bahasa langsung berlaku dan tersimpan otomatis.",
+  "set.appearanceNote":
+    "Tema dan bahasa langsung berlaku dan tersimpan otomatis.",
   "set.report": "Laporan",
-  "set.reportDesc": "Identitas dan isi laporan PDF. Tersimpan otomatis di browser ini.",
+  "set.reportDesc":
+    "Identitas dan isi laporan PDF. Tersimpan otomatis di browser ini.",
   "set.company": "Nama perusahaan / instansi",
   "set.technician": "Nama teknisi",
   "set.technicianPh": "cth. Budi Santoso",
@@ -37,7 +39,8 @@ export const ID = {
   "set.withVisual": "Sertakan visual before / after",
   "set.withVisualHint": "Dua gambar pembanding + rencana perapian + denah rak.",
   "set.alwaysIn": "Ringkasan dan Saran selalu ikut dalam laporan.",
-  "set.langNote": "Teks laporan PDF/Markdown yang dihasilkan tetap berbahasa Indonesia.",
+  "set.langNote":
+    "Teks laporan PDF/Markdown yang dihasilkan tetap berbahasa Indonesia.",
   "set.cancel": "Batal",
   "set.save": "Simpan pengaturan laporan",
 
@@ -71,19 +74,27 @@ export const ID = {
   "chat.placeholder": "Tanya soal rak ini...",
   "chat.aria": "Pesan untuk asisten AI",
   "chat.send": "Kirim",
-  "chat.noPhoto": "Belum ada foto. Unggah atau ambil foto rak dulu di panel tengah.",
+  "chat.attachDefault": "Jelaskan lampiran ini.",
+  "chat.skipped": "lampiran dilewati",
+  "chat.noPhoto":
+    "Belum ada foto. Unggah atau ambil foto rak dulu di panel tengah.",
   "chat.running": "Analisis sedang berjalan, tunggu sebentar.",
-  "chat.starting": "Oke, saya mulai menganalisis foto. Hasilnya muncul di panel kanan.",
-  "chat.noResult": "Belum ada hasil analisis. Minta saya menganalisis foto dulu.",
+  "chat.starting":
+    "Oke, saya mulai menganalisis foto. Hasilnya muncul di panel kanan.",
+  "chat.noResult":
+    "Belum ada hasil analisis. Minta saya menganalisis foto dulu.",
   "chat.noFinding": "Tidak ada temuan.",
   "chat.worst": "Temuan terparah: #{n} {title}. {desc}",
-  "chat.score": "Skor {score}/100 ({status}). {k} kritis, {s} sedang, {r} ringan.",
+  "chat.score":
+    "Skor {score}/100 ({status}). {k} kritis, {s} sedang, {r} ringan.",
   "chat.noAdvice": "Tidak ada saran.",
   "chat.firstPriority": "Prioritas pertama: {title}. {text}",
   "chat.findingsOpen": "Ada {n} temuan. Saya buka tab Temuan di panel kanan.",
-  "chat.hardware": "Terdeteksi {n} jenis hardware ({u} unit): {list}. Saya buka tab Hardware di panel kanan.",
+  "chat.hardware":
+    "Terdeteksi {n} jenis hardware ({u} unit): {list}. Saya buka tab Hardware di panel kanan.",
   "chat.noHardware": "Belum ada data hardware. Analisis ulang foto dulu.",
-  "chat.fallback": "Coba tanya: \"apa temuan terparah?\", \"ringkas skornya\", \"saran prioritas\", atau \"ada hardware apa?\".",
+  "chat.fallback":
+    'Coba tanya: "apa temuan terparah?", "ringkas skornya", "saran prioritas", atau "ada hardware apa?".',
 
   // Foto
   "photo.title": "1 · Foto rak",
@@ -98,7 +109,8 @@ export const ID = {
   "photo.replace": "Ganti",
   "photo.cameraShort": "Kamera",
   "photo.clear": "Hapus",
-  "photo.viewAria": "Pratinjau foto rak — scroll atau cubit untuk zoom, seret untuk geser",
+  "photo.viewAria":
+    "Pratinjau foto rak — scroll atau cubit untuk zoom, seret untuk geser",
   "photo.imgAlt": "Foto rak yang dianalisis",
   "photo.findingsCount": "{n} temuan",
   "photo.step1": "Membaca foto & menyesuaikan orientasi",
@@ -110,25 +122,31 @@ export const ID = {
   // Kamera
   "cam.aria": "Ambil foto dari kamera",
   "cam.title": "Ambil foto rak",
-  "cam.error": "Kamera tidak bisa diakses. Pastikan izin kamera diberikan dan halaman dibuka via localhost/HTTPS.",
+  "cam.error":
+    "Kamera tidak bisa diakses. Pastikan izin kamera diberikan dan halaman dibuka via localhost/HTTPS.",
   "cam.cancel": "Batal",
   "cam.shoot": "Jepret foto",
 
   // Hasil
   "res.title": "2 · Hasil analisis",
-  "res.emptyHtml": "Belum ada hasil.<br />Masukkan foto rak, lalu tekan <b>Analisis foto ini</b>.",
+  "res.emptyHtml":
+    "Belum ada hasil.<br />Masukkan foto rak, lalu tekan <b>Analisis foto ini</b>.",
   "res.tabSummary": "Ringkasan",
   "res.tabFindings": "Temuan",
   "res.tabVisual": "Visual rapi",
   "res.tabAdvice": "Saran",
+  "res.tab3d": "3D",
   "res.tabHardware": "Hardware",
   "res.hwSummary": "{n} jenis · {u} unit terdeteksi",
   "res.hwBrand": "Merek",
   "res.hwKind": "Jenis",
   "res.hwType": "Tipe",
   "res.hwQty": "Jumlah",
+  "res.hwPos": "Posisi",
+  "res.hwPosUncertain": "(perkiraan)",
   "res.hwCropAria": "Foto {nama}",
-  "res.hwEmpty": "Belum ada data hardware. Analisis ulang foto untuk mendeteksinya.",
+  "res.hwEmpty":
+    "Belum ada data hardware. Analisis ulang foto untuk mendeteksinya.",
   "res.scoreAria": "Skor keamanan {score} dari 100",
   "res.verdict": "Skor keamanan & kerapian: {score}",
   "res.critical": "kritis",
@@ -154,13 +172,14 @@ export const ID = {
   "res.tidyPlan": "Rencana perapian ({n} aksi)",
   "res.idealRoutes": "Rute kabel ideal",
   "res.simNote":
-    "Visual \"sesudah\" saat ini berupa simulasi: overlay rute kabel + denah rak ideal. Nanti diganti gambar hasil render AI dari backend.",
+    'Visual "sesudah" saat ini berupa simulasi: overlay rute kabel + denah rak ideal. Nanti diganti gambar hasil render AI dari backend.',
   "res.shareDownload": "Bagikan / unduh laporan",
 
   // Riwayat
   "hist.title": "Riwayat analisis",
   "hist.clearAll": "Hapus semua",
-  "hist.empty": "Belum ada riwayat. Setiap analisis tersimpan otomatis di browser ini.",
+  "hist.empty":
+    "Belum ada riwayat. Setiap analisis tersimpan otomatis di browser ini.",
   "hist.open": "Buka hasil {name}",
   "hist.score": "skor {n}",
 
@@ -172,9 +191,12 @@ export const ID = {
   "share.close": "Tutup",
   "share.descHtml":
     "Unduh laporan <b>{photo}</b> dari project <b>{project}</b> sebagai PDF atau Markdown. Isi laporan mengikuti <b>Pengaturan</b> dan selalu memuat:",
-  "share.liSummary": "<b>Ringkasan</b> — vonis, skor 0–100, dan tabel skor per kategori.",
-  "share.liFindings": "<b>Temuan + foto ({n})</b> — tiap temuan dengan potongan fotonya, langkah perbaikan, dan acuan standar.",
-  "share.liVisual": "<b>Visual rapi</b> — 2 gambar pembanding sebelum vs sesudah (simulasi), rencana perapian, dan denah rak.",
+  "share.liSummary":
+    "<b>Ringkasan</b> — vonis, skor 0–100, dan tabel skor per kategori.",
+  "share.liFindings":
+    "<b>Temuan + foto ({n})</b> — tiap temuan dengan potongan fotonya, langkah perbaikan, dan acuan standar.",
+  "share.liVisual":
+    "<b>Visual rapi</b> — 2 gambar pembanding sebelum vs sesudah (simulasi), rencana perapian, dan denah rak.",
   "share.liAdvice": "<b>Saran</b> — daftar prioritas perbaikan P1, P2, …",
   "share.editSettings": "Ubah isi di Pengaturan",
   "share.noteHtml":
@@ -194,12 +216,18 @@ export const ID = {
 
   // App
   "app.close": "Tutup",
-  "app.footer": "NeatOps AI · tahap 1 frontend simulasi · kontrak hasil <code>simulator.js</code> dipakai ulang saat integrasi backend nanti.",
-  "app.warnProject": "Project gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil, tapi bisa hilang saat refresh.",
-  "app.warnHistory": "Riwayat gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil dan bisa diunduh.",
-  "app.warnHistoryNA": "Riwayat gagal disimpan: penyimpanan browser tidak tersedia. Hasil saat ini tetap tampil dan bisa diunduh.",
-  "app.warnClear": "Riwayat gagal dihapus: penyimpanan browser tidak bisa ditulis.",
-  "app.warnBackend": "Backend deteksi tidak bisa dipakai ({reason}). Hasil di bawah memakai simulasi, bukan deteksi nyata.",
+  "app.footer":
+    "NeatOps AI · tahap 1 frontend simulasi · kontrak hasil <code>simulator.js</code> dipakai ulang saat integrasi backend nanti.",
+  "app.warnProject":
+    "Project gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil, tapi bisa hilang saat refresh.",
+  "app.warnHistory":
+    "Riwayat gagal disimpan: penyimpanan browser penuh atau diblokir. Hasil saat ini tetap tampil dan bisa diunduh.",
+  "app.warnHistoryNA":
+    "Riwayat gagal disimpan: penyimpanan browser tidak tersedia. Hasil saat ini tetap tampil dan bisa diunduh.",
+  "app.warnClear":
+    "Riwayat gagal dihapus: penyimpanan browser tidak bisa ditulis.",
+  "app.warnBackend":
+    "Backend deteksi tidak bisa dipakai ({reason}). Hasil di bawah memakai simulasi, bukan deteksi nyata.",
 };
 
 export const EN = {
@@ -227,15 +255,18 @@ export const EN = {
   "set.themeName.rose": "Rose",
   "set.themeName.orange": "Orange",
   "set.language": "Language",
-  "set.appearanceNote": "Theme and language apply instantly and are saved automatically.",
+  "set.appearanceNote":
+    "Theme and language apply instantly and are saved automatically.",
   "set.report": "Report",
-  "set.reportDesc": "Identity and contents of the PDF report. Saved automatically in this browser.",
+  "set.reportDesc":
+    "Identity and contents of the PDF report. Saved automatically in this browser.",
   "set.company": "Company / organization name",
   "set.technician": "Technician name",
   "set.technicianPh": "e.g. John Smith",
   "set.pdfContent": "PDF contents",
   "set.withPhotos": "Include a photo for each finding",
-  "set.withPhotosHint": "A cropped photo of each finding area in the Findings section.",
+  "set.withPhotosHint":
+    "A cropped photo of each finding area in the Findings section.",
   "set.withVisual": "Include before / after visual",
   "set.withVisualHint": "Two comparison images + tidy-up plan + rack layout.",
   "set.alwaysIn": "The Summary and Advice sections are always included.",
@@ -273,19 +304,27 @@ export const EN = {
   "chat.placeholder": "Ask about this rack...",
   "chat.aria": "Message for the AI assistant",
   "chat.send": "Send",
-  "chat.noPhoto": "No photo yet. Upload or take a rack photo in the middle panel first.",
+  "chat.attachDefault": "Explain this attachment.",
+  "chat.skipped": "attachments skipped",
+  "chat.noPhoto":
+    "No photo yet. Upload or take a rack photo in the middle panel first.",
   "chat.running": "The analysis is running, please wait a moment.",
-  "chat.starting": "Okay, I'm starting to analyze the photo. Results will appear in the right panel.",
+  "chat.starting":
+    "Okay, I'm starting to analyze the photo. Results will appear in the right panel.",
   "chat.noResult": "No analysis result yet. Ask me to analyze a photo first.",
   "chat.noFinding": "No findings.",
   "chat.worst": "Worst finding: #{n} {title}. {desc}",
-  "chat.score": "Score {score}/100 ({status}). {k} critical, {s} medium, {r} minor.",
+  "chat.score":
+    "Score {score}/100 ({status}). {k} critical, {s} medium, {r} minor.",
   "chat.noAdvice": "No advice.",
   "chat.firstPriority": "First priority: {title}. {text}",
-  "chat.findingsOpen": "There are {n} findings. I opened the Findings tab in the right panel.",
-  "chat.hardware": "Detected {n} hardware kinds ({u} units): {list}. I opened the Hardware tab in the right panel.",
+  "chat.findingsOpen":
+    "There are {n} findings. I opened the Findings tab in the right panel.",
+  "chat.hardware":
+    "Detected {n} hardware kinds ({u} units): {list}. I opened the Hardware tab in the right panel.",
   "chat.noHardware": "No hardware data yet. Re-analyze a photo first.",
-  "chat.fallback": "Try asking: \"what is the worst finding?\", \"summarize the score\", \"priority advice\", or \"what hardware is there?\".",
+  "chat.fallback":
+    'Try asking: "what is the worst finding?", "summarize the score", "priority advice", or "what hardware is there?".',
 
   // Photo
   "photo.title": "1 · Rack photo",
@@ -312,23 +351,28 @@ export const EN = {
   // Camera
   "cam.aria": "Take a photo with the camera",
   "cam.title": "Take rack photo",
-  "cam.error": "The camera can't be accessed. Make sure camera permission is granted and the page is opened via localhost/HTTPS.",
+  "cam.error":
+    "The camera can't be accessed. Make sure camera permission is granted and the page is opened via localhost/HTTPS.",
   "cam.cancel": "Cancel",
   "cam.shoot": "Capture photo",
 
   // Results
   "res.title": "2 · Analysis results",
-  "res.emptyHtml": "No results yet.<br />Add a rack photo, then press <b>Analyze this photo</b>.",
+  "res.emptyHtml":
+    "No results yet.<br />Add a rack photo, then press <b>Analyze this photo</b>.",
   "res.tabSummary": "Summary",
   "res.tabFindings": "Findings",
   "res.tabVisual": "Tidy visual",
   "res.tabAdvice": "Advice",
+  "res.tab3d": "3D",
   "res.tabHardware": "Hardware",
   "res.hwSummary": "{n} kinds · {u} units detected",
   "res.hwBrand": "Brand",
   "res.hwKind": "Kind",
   "res.hwType": "Type",
   "res.hwQty": "Qty",
+  "res.hwPos": "Position",
+  "res.hwPosUncertain": "(estimate)",
   "res.hwCropAria": "Photo of {nama}",
   "res.hwEmpty": "No hardware data yet. Re-analyze the photo to detect it.",
   "res.scoreAria": "Safety score {score} out of 100",
@@ -356,13 +400,14 @@ export const EN = {
   "res.tidyPlan": "Tidy-up plan ({n} actions)",
   "res.idealRoutes": "Ideal cable routes",
   "res.simNote":
-    "The \"after\" visual is currently a simulation: cable route overlay + ideal rack layout. It will be replaced by an AI-rendered image from the backend.",
+    'The "after" visual is currently a simulation: cable route overlay + ideal rack layout. It will be replaced by an AI-rendered image from the backend.',
   "res.shareDownload": "Share / download report",
 
   // History
   "hist.title": "Analysis history",
   "hist.clearAll": "Clear all",
-  "hist.empty": "No history yet. Every analysis is saved automatically in this browser.",
+  "hist.empty":
+    "No history yet. Every analysis is saved automatically in this browser.",
   "hist.open": "Open result {name}",
   "hist.score": "score {n}",
 
@@ -374,9 +419,12 @@ export const EN = {
   "share.close": "Close",
   "share.descHtml":
     "Download the report for <b>{photo}</b> from project <b>{project}</b> as PDF or Markdown. Its contents follow <b>Settings</b> and always include:",
-  "share.liSummary": "<b>Summary</b> — verdict, score 0–100, and a score table per category.",
-  "share.liFindings": "<b>Findings + photos ({n})</b> — each finding with its photo crop, fix steps, and standard reference.",
-  "share.liVisual": "<b>Tidy visual</b> — 2 before vs after comparison images (simulation), tidy-up plan, and rack layout.",
+  "share.liSummary":
+    "<b>Summary</b> — verdict, score 0–100, and a score table per category.",
+  "share.liFindings":
+    "<b>Findings + photos ({n})</b> — each finding with its photo crop, fix steps, and standard reference.",
+  "share.liVisual":
+    "<b>Tidy visual</b> — 2 before vs after comparison images (simulation), tidy-up plan, and rack layout.",
   "share.liAdvice": "<b>Advice</b> — prioritized fix list P1, P2, …",
   "share.editSettings": "Change contents in Settings",
   "share.noteHtml":
@@ -390,16 +438,23 @@ export const EN = {
   "share.stAfter": "Composing the after image (simulation)…",
   "share.stDoc": "Composing the report document…",
   "share.stPrint": "Opening the print dialog…",
-  "share.stDone": "Print dialog opened — choose “Save as PDF” as the destination.",
+  "share.stDone":
+    "Print dialog opened — choose “Save as PDF” as the destination.",
   "share.errPdf": "Failed to prepare the PDF: {msg}",
   "share.errCopy": "Copy failed — the browser blocked clipboard access.",
 
   // App
   "app.close": "Close",
-  "app.footer": "NeatOps AI · stage 1 frontend simulation · the <code>simulator.js</code> result contract is reused when the backend is integrated.",
-  "app.warnProject": "Project could not be saved: browser storage is full or blocked. The current result stays visible but may be lost on refresh.",
-  "app.warnHistory": "History could not be saved: browser storage is full or blocked. The current result stays visible and can be downloaded.",
-  "app.warnHistoryNA": "History could not be saved: browser storage is unavailable. The current result stays visible and can be downloaded.",
-  "app.warnClear": "History could not be cleared: browser storage is not writable.",
-  "app.warnBackend": "The detection backend is unavailable ({reason}). The result below is simulated, not real detection.",
+  "app.footer":
+    "NeatOps AI · stage 1 frontend simulation · the <code>simulator.js</code> result contract is reused when the backend is integrated.",
+  "app.warnProject":
+    "Project could not be saved: browser storage is full or blocked. The current result stays visible but may be lost on refresh.",
+  "app.warnHistory":
+    "History could not be saved: browser storage is full or blocked. The current result stays visible and can be downloaded.",
+  "app.warnHistoryNA":
+    "History could not be saved: browser storage is unavailable. The current result stays visible and can be downloaded.",
+  "app.warnClear":
+    "History could not be cleared: browser storage is not writable.",
+  "app.warnBackend":
+    "The detection backend is unavailable ({reason}). The result below is simulated, not real detection.",
 };

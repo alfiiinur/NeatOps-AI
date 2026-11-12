@@ -21,9 +21,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image, ImageOps  # noqa: E402
 
-from app.labeling import label_config, task_from_analysis  # noqa: E402
-from app.meta_client import MetaApiError, MetaClient  # noqa: E402
-from app.pipeline import analyze_rack  # noqa: E402
+from app.workflows.labeling import label_config, task_from_analysis  # noqa: E402
+from app.clients.meta_client import MetaApiError, MetaClient  # noqa: E402
+from app.workflows.pipeline import analyze_rack  # noqa: E402
 
 EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 

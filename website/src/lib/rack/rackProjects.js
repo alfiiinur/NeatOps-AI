@@ -3,6 +3,7 @@
 // Disimpan terpisah dari project Analisis Rak, pola sama dengan projects.js.
 
 import { autoProjectName, validateProjectName } from "../shared/projects.js";
+import { DEFAULT_DESK, clampDesk } from "./deskSimulator.js";
 
 export { autoProjectName, validateProjectName };
 
@@ -26,12 +27,20 @@ export function newRackProject(name) {
     rackU: 12,
     selectedQty: {},
     result: null,
+    // Mode meja kerja (terpisah dari state rak agar mode rak tidak berubah).
+    mode: "rack", // "rack" | "desk"
+    desk: { ...DEFAULT_DESK },
+    deskName: "Meja Kerja Utama",
+    deskStep: 1, // 1=ukuran meja, 2=pilih hardware, 3=hasil
+    deskQty: {},
+    deskResult: null,
   };
 }
 
 function normalize(p) {
   const base = newRackProject(p.name);
-  const qty = p.selectedQty && typeof p.selectedQty === "object" ? p.selectedQty : {};
+  const qty =
+    p.selectedQty && typeof p.selectedQty === "object" ? p.selectedQty : {};
   return {
     ...base,
     id: p.id,
@@ -43,6 +52,16 @@ function normalize(p) {
     rackU: Number.isFinite(p.rackU) ? p.rackU : base.rackU,
     selectedQty: qty,
     result: p.result ?? null,
+    mode: p.mode === "desk" ? "desk" : "rack",
+    desk: clampDesk(p.desk),
+    deskName: typeof p.deskName === "string" ? p.deskName : base.deskName,
+    deskStep: [1, 2, 3].includes(p.deskStep) ? p.deskStep : 1,
+    deskQty:
+      p.deskQty && typeof p.deskQty === "object" && !Array.isArray(p.deskQty)
+        ? p.deskQty
+        : {},
+    deskResult:
+      p.deskResult && Array.isArray(p.deskResult.items) ? p.deskResult : null,
   };
 }
 
@@ -54,7 +73,9 @@ export function loadRackProjects(storage) {
     if (!Array.isArray(items)) items = null;
     if (items) {
       items = items
-        .filter((p) => p && typeof p.id === "string" && typeof p.name === "string")
+        .filter(
+          (p) => p && typeof p.id === "string" && typeof p.name === "string",
+        )
         .map(normalize);
     }
     if (!items || items.length === 0) items = [newRackProject("Project 1")];
