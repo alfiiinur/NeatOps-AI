@@ -1,0 +1,255 @@
+<!doctype html>
+<html lang="id">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>NeatOps AI — Audit kerapian & keamanan rak server dari foto</title>
+    <meta
+      name="description"
+      content="NeatOps AI menilai kerapian kabel dan keselamatan rak server serta panel listrik hanya dari foto, lengkap dengan temuan, visual perapian, dan saran berprioritas."
+    />
+    <meta property="og:title" content="NeatOps AI" />
+    <meta property="og:description" content="Audit rak server & panel listrik dari foto." />
+    <meta property="og:type" content="website" />
+    <link rel="icon" href="assets/favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <a class="skip" href="#main">Lewati ke konten</a>
+
+    <header class="nav" id="top">
+      <div class="wrap nav-in">
+        <a class="brand" href="#top" aria-label="NeatOps AI">
+          <span class="brand-mark">N</span>
+          <span class="brand-name">NeatOps <span>AI</span></span>
+        </a>
+        <nav class="nav-links" aria-label="Navigasi utama">
+          <a href="#fitur">Fitur</a>
+          <a href="#alur">Cara kerja</a>
+          <a href="#hasil">Hasil</a>
+          <a href="#faq">FAQ</a>
+        </nav>
+        <div class="nav-actions">
+          <button class="icon-btn" id="themeToggle" type="button" aria-label="Ganti mode terang/gelap">
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+              <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
+            </svg>
+          </button>
+          <a class="btn btn-primary" data-app-link href="http://localhost:5173/">Buka aplikasi</a>
+        </div>
+      </div>
+    </header>
+
+    <main id="main">
+      <!-- HERO -->
+      <section class="hero">
+        <div class="wrap hero-grid">
+          <div class="hero-copy">
+            <p class="eyebrow">Audit rak &amp; panel berbasis AI</p>
+            <h1>Rak yang &ldquo;asal nyala&rdquo; bukan berarti aman.</h1>
+            <p class="lead">
+              Foto rak server atau panel elektrikal Anda. NeatOps AI menilai kerapian dan keselamatannya,
+              memecah temuan satu per satu, menunjukkan visual perapian, lalu memberi saran perbaikan
+              berprioritas.
+            </p>
+            <div class="cta-row">
+              <a class="btn btn-primary btn-lg" data-app-link href="http://localhost:5173/">Coba sekarang</a>
+              <a class="btn btn-ghost btn-lg" href="#alur">Lihat cara kerja</a>
+            </div>
+            <ul class="hero-points">
+              <li>Tanpa instal, jalan di browser</li>
+              <li>Upload atau ambil foto dari kamera</li>
+              <li>Laporan bisa diunduh &amp; dibagikan</li>
+            </ul>
+          </div>
+
+          <div class="hero-visual" aria-hidden="true">
+            <div class="mock">
+              <div class="mock-head">
+                <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+                <span class="mock-title">rak-server-A.jpg</span>
+              </div>
+              <div class="mock-body">
+                <div class="rack">
+                  <div class="unit"></div>
+                  <div class="unit"></div>
+                  <div class="unit bad"><i class="tag bad">#1 Kabel kusut</i></div>
+                  <div class="unit"></div>
+                  <div class="unit warn"><i class="tag warn">#2 Tanpa label</i></div>
+                  <div class="unit"></div>
+                  <div class="unit"></div>
+                </div>
+                <div class="score">
+                  <svg viewBox="0 0 120 120" width="120" height="120">
+                    <circle cx="60" cy="60" r="50" fill="none" stroke="var(--line)" stroke-width="10" />
+                    <circle
+                      class="ring"
+                      cx="60"
+                      cy="60"
+                      r="50"
+                      fill="none"
+                      stroke="var(--warn)"
+                      stroke-width="10"
+                      stroke-linecap="round"
+                      stroke-dasharray="314"
+                      stroke-dashoffset="100"
+                      transform="rotate(-90 60 60)"
+                    />
+                    <text x="60" y="66" text-anchor="middle" class="score-num">68</text>
+                  </svg>
+                  <span class="chip chip-warn">Perlu perhatian</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- MASALAH -->
+      <section class="strip">
+        <div class="wrap strip-grid">
+          <div>
+            <b>Kabel kusut</b>
+            <span>menyulitkan troubleshooting dan menghambat aliran udara.</span>
+          </div>
+          <div>
+            <b>Risiko listrik</b>
+            <span>beban berlebih, grounding terlewat, dan sambungan longgar.</span>
+          </div>
+          <div>
+            <b>Audit manual lambat</b>
+            <span>bergantung pada mata teknisi dan jarang terdokumentasi.</span>
+          </div>
+        </div>
+      </section>
+
+      <!-- FITUR -->
+      <section class="section" id="fitur">
+        <div class="wrap">
+          <p class="eyebrow">Fitur</p>
+          <h2>Satu foto, hasil audit yang bisa ditindaklanjuti</h2>
+          <div class="cards">
+            <article class="card">
+              <div class="ico">01</div>
+              <h3>Audit dari foto</h3>
+              <p>Upload, seret, atau ambil foto lewat kamera. Skor 0&ndash;100 dan vonis Aman, Perlu Perhatian, atau Berbahaya.</p>
+            </article>
+            <article class="card">
+              <div class="ico">02</div>
+              <h3>Temuan bernomor</h3>
+              <p>Setiap masalah ditandai di foto lengkap dengan tingkat keparahan, langkah perbaikan, dan acuan standar.</p>
+            </article>
+            <article class="card">
+              <div class="ico">03</div>
+              <h3>Visual sebelum/sesudah</h3>
+              <p>Pembanding geser, denah rak ideal 12U, dan rencana perapian rute kabel.</p>
+            </article>
+            <article class="card">
+              <div class="ico">04</div>
+              <h3>Asisten AI</h3>
+              <p>Tanya langsung soal hasil audit, minta penjelasan temuan, atau prioritas yang dikerjakan lebih dulu.</p>
+            </article>
+            <article class="card">
+              <div class="ico">05</div>
+              <h3>Alat bantu jaringan</h3>
+              <p>Rack builder, asisten konfigurasi jaringan, katalog hardware, dan kalkulator daya serta kapasitas.</p>
+            </article>
+            <article class="card">
+              <div class="ico">06</div>
+              <h3>Project &amp; laporan</h3>
+              <p>Kelola beberapa project, simpan riwayat otomatis, lalu unduh atau bagikan laporan Markdown.</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <!-- ALUR -->
+      <section class="section alt" id="alur">
+        <div class="wrap">
+          <p class="eyebrow">Cara kerja</p>
+          <h2>Empat langkah, kurang dari satu menit</h2>
+          <ol class="steps">
+            <li>
+              <span class="n">1</span>
+              <div><h3>Ambil foto</h3><p>Rak server atau panel listrik, dari file atau kamera.</p></div>
+            </li>
+            <li>
+              <span class="n">2</span>
+              <div><h3>Analisis</h3><p>AI memeriksa kabel, daya, ventilasi, grounding, label, dan struktur.</p></div>
+            </li>
+            <li>
+              <span class="n">3</span>
+              <div><h3>Baca temuan</h3><p>Lihat lokasi masalah langsung di foto beserta cara memperbaikinya.</p></div>
+            </li>
+            <li>
+              <span class="n">4</span>
+              <div><h3>Rapikan &amp; laporkan</h3><p>Ikuti saran berprioritas, lalu unduh laporan untuk tim Anda.</p></div>
+            </li>
+          </ol>
+        </div>
+      </section>
+
+      <!-- HASIL -->
+      <section class="section" id="hasil">
+        <div class="wrap">
+          <p class="eyebrow">Hasil</p>
+          <h2>Enam kategori dinilai sekaligus</h2>
+          <div class="cat-grid" id="cats">
+            <div class="cat" data-v="72"><h4>Kabel</h4><b>72</b><div class="bar"><i></i></div></div>
+            <div class="cat" data-v="55"><h4>Daya</h4><b>55</b><div class="bar"><i></i></div></div>
+            <div class="cat" data-v="81"><h4>Ventilasi</h4><b>81</b><div class="bar"><i></i></div></div>
+            <div class="cat" data-v="40"><h4>Grounding</h4><b>40</b><div class="bar"><i></i></div></div>
+            <div class="cat" data-v="64"><h4>Label</h4><b>64</b><div class="bar"><i></i></div></div>
+            <div class="cat" data-v="88"><h4>Struktur</h4><b>88</b><div class="bar"><i></i></div></div>
+          </div>
+          <p class="note">Contoh tampilan. Nilai pada aplikasi bergantung pada foto yang dianalisis.</p>
+        </div>
+      </section>
+
+      <!-- FAQ -->
+      <section class="section alt" id="faq">
+        <div class="wrap narrow">
+          <p class="eyebrow">FAQ</p>
+          <h2>Pertanyaan umum</h2>
+          <details>
+            <summary>Apakah analisisnya sudah memakai model AI sungguhan?</summary>
+            <p>
+              Saat ini aplikasi berjalan sebagai simulasi di browser agar alur dapat dicoba lebih dulu.
+              Integrasi backend dan model AI sedang disiapkan pada tahap berikutnya.
+            </p>
+          </details>
+          <details>
+            <summary>Apakah foto saya dikirim ke server?</summary>
+            <p>Pada tahap simulasi, foto dan riwayat disimpan lokal di browser Anda (localStorage).</p>
+          </details>
+          <details>
+            <summary>Apakah bisa menggantikan inspeksi teknisi?</summary>
+            <p>Tidak. NeatOps AI membantu menyaring dan mendokumentasikan, sedangkan keputusan keselamatan listrik tetap perlu pemeriksaan teknisi berkompeten.</p>
+          </details>
+          <details>
+            <summary>Perangkat apa yang didukung?</summary>
+            <p>Browser modern di laptop maupun ponsel. Tampilan responsif dan mendukung kamera perangkat.</p>
+          </details>
+        </div>
+      </section>
+
+      <!-- CTA -->
+      <section class="cta">
+        <div class="wrap cta-in">
+          <h2>Siap merapikan rak Anda?</h2>
+          <p>Mulai dengan satu foto. Tanpa instal, tanpa daftar.</p>
+          <a class="btn btn-primary btn-lg" data-app-link href="http://localhost:5173/">Buka NeatOps AI</a>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap foot-in">
+        <span>&copy; <span id="year"></span> NeatOps AI</span>
+        <a href="#top">Kembali ke atas</a>
+      </div>
+    </footer>
+
+    <script src="script.js"></script>
+  </body>
+</html>

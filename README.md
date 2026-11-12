@@ -18,7 +18,8 @@ perbaikan berprioritas.
 
 ```text
 NeatOps AI/
-├── website/     # frontend Svelte + Vite (tahap 1, selesai)
+├── website/     # aplikasi utama: Svelte + Vite (tahap 1, selesai)
+├── landingPage/ # landing page statis (HTML/CSS/JS), terpisah dari aplikasi
 ├── docs/        # dokumentasi + gambar pendukung
 ├── infra/       # kebutuhan infrastruktur / deploy (menyusul)
 ├── video/       # materi video / demo (menyusul)

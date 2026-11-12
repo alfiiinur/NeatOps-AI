@@ -1,4 +1,4 @@
-﻿/* NeatOps AI â€” tema industrial gelap, aksen amber keselamatan. */
+/* NeatOps AI — tema industrial gelap, aksen amber keselamatan. */
 
 :root {
   --bg: #f1ede4;
@@ -22,6 +22,46 @@
   --sans:
     "Segoe UI", system-ui, -apple-system, Roboto, "Helvetica Neue", sans-serif;
 }
+:root {
+  --input-bg: #fff;
+  --on-accent: #fbf9f4;
+  --on-lime: var(--on-lime);
+  color-scheme: light;
+}
+
+/* ---------- Tema warna (aksen) ---------- */
+[data-theme="olive"] { --amber: #5f7d10; --amber-dim: #a9bd6a; --lime: #c9ee5b; --lime-edge: #9fc12f; }
+[data-theme="blue"] { --amber: #1f6fb2; --amber-dim: #8dbbe0; --lime: #a8d2f5; --lime-edge: #5da3dc; --on-lime: #0d2a44; }
+[data-theme="teal"] { --amber: #0f7a6b; --amber-dim: #86c4ba; --lime: #9fe0d3; --lime-edge: #4fb8a7; --on-lime: #0a2f29; }
+[data-theme="purple"] { --amber: #7a46b5; --amber-dim: #bb9ddb; --lime: #d7bff2; --lime-edge: #a67bd6; --on-lime: #2d1648; }
+[data-theme="rose"] { --amber: #a8325e; --amber-dim: #d9899f; --lime: #f3b9cd; --lime-edge: #d9798f; --on-lime: #4a0f26; }
+[data-theme="orange"] { --amber: #b4531b; --amber-dim: #e0a77f; --lime: #f6c9a3; --lime-edge: #e0955f; --on-lime: #4a2108; }
+
+/* ---------- Mode gelap ---------- */
+[data-mode="dark"] {
+  --bg: #15171a;
+  --bg-soft: #1b1e22;
+  --panel: #212529;
+  --panel-2: #2a2e33;
+  --line: #3b4046;
+  --line-soft: #2f3439;
+  --text: #ece9e1;
+  --muted: #b5afa1;
+  --faint: #8e8979;
+  --input-bg: #15171a;
+  --on-accent: #10151a;
+  --ok: #3cc37a;
+  --warn: #e0a22a;
+  --bad: #ef5b61;
+  color-scheme: dark;
+}
+[data-mode="dark"][data-theme="olive"] { --amber: #b6d84a; --amber-dim: #5d7524; }
+[data-mode="dark"][data-theme="blue"] { --amber: #6fb0ea; --amber-dim: #2f6fa3; }
+[data-mode="dark"][data-theme="teal"] { --amber: #4fc9b5; --amber-dim: #1f7a6c; }
+[data-mode="dark"][data-theme="purple"] { --amber: #b48ae6; --amber-dim: #5b3a88; }
+[data-mode="dark"][data-theme="rose"] { --amber: #ec7aa0; --amber-dim: #7d2a4a; }
+[data-mode="dark"][data-theme="orange"] { --amber: #f0975c; --amber-dim: #8a4a20; }
+
 * {
   box-sizing: border-box;
 }
@@ -66,7 +106,7 @@ body {
   background: var(--amber);
   display: grid;
   place-items: center;
-  color: #fbf9f4;
+  color: var(--on-accent);
   font-family: var(--mono);
   font-weight: 700;
   font-size: 17px;
@@ -249,7 +289,7 @@ button:disabled {
 .btn-primary {
   background: var(--lime);
   border-color: var(--lime-edge);
-  color: #243006;
+  color: var(--on-lime);
   font-weight: 700;
   width: 100%;
   justify-content: center;
@@ -668,7 +708,7 @@ li.done .step-dot {
   cursor: ew-resize;
 }
 .compare-handle::after {
-  content: "â—€ â–¶";
+  content: "◀ ▶";
   position: absolute;
   top: 50%;
   left: 50%;
@@ -676,7 +716,7 @@ li.done .step-dot {
   font-size: 10px;
   letter-spacing: 1px;
   background: var(--lime);
-  color: #243006;
+  color: var(--on-lime);
   font-weight: 700;
   border-radius: 11px;
   padding: 3px 9px;
@@ -1014,7 +1054,7 @@ li.done .step-dot {
 .chat-form button {
   background: var(--lime);
   border-color: var(--lime-edge);
-  color: #243006;
+  color: var(--on-lime);
   font-weight: 700;
 }
 /* ---------- Penghubung temuan (animasi) ---------- */
@@ -1136,7 +1176,7 @@ li.done .step-dot {
 
 .nav-item.active {
   background: var(--lime);
-  color: #243006;
+  color: var(--on-lime);
   font-weight: 700;
   border-color: var(--lime-edge);
 }
@@ -1151,5 +1191,198 @@ li.done .step-dot {
   }
   .nav-item svg {
     display: none;
+  }
+}
+
+/* =====================================================================
+   RESPONSIVE — mobile, tablet, laptop
+   Breakpoints: 1100 (tablet landscape), 800 (tablet portrait), 640 (phone)
+   ===================================================================== */
+
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+}
+body {
+  overflow-x: clip; /* jaring pengaman: tidak ada geser horizontal halaman */
+}
+img,
+video,
+canvas {
+  max-width: 100%;
+}
+.hist-card img,
+.photo-inner img {
+  max-width: none;
+}
+
+/* Target sentuh nyaman di layar sentuh */
+@media (pointer: coarse) {
+  button,
+  .btn,
+  select,
+  input[type="text"],
+  input[type="number"],
+  input[type="search"] {
+    min-height: 40px;
+  }
+  .btn-small {
+    min-height: 36px;
+  }
+  .chat-chips button {
+    min-height: 34px;
+  }
+}
+
+/* ---------- Bilah atas ---------- */
+@media (max-width: 1100px) {
+  .topbar {
+    flex-wrap: wrap;
+    row-gap: 8px;
+    padding: 8px 16px;
+  }
+  .topbar-right {
+    order: 2;
+  }
+  .navbar-nav {
+    order: 3;
+    flex: 1 0 100%;
+    margin-left: 0;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+  }
+  .navbar-nav::-webkit-scrollbar {
+    display: none;
+  }
+  .nav-item {
+    flex: none;
+  }
+}
+@media (max-width: 640px) {
+  .topbar {
+    padding: 8px 12px;
+    gap: 8px;
+  }
+  .brand {
+    gap: 8px;
+    min-width: 0;
+  }
+  .brand-name {
+    font-size: 16px;
+  }
+  .badge-sim {
+    display: none;
+  }
+  .nav-item {
+    padding: 7px 12px;
+  }
+}
+
+/* ---------- Tata letak halaman ---------- */
+@media (max-width: 1100px) {
+  .shell {
+    padding: 14px 16px 32px;
+  }
+  /* Urutan alur: foto -> hasil -> asisten */
+  .workspace > .panel:nth-of-type(1) {
+    order: 3;
+  }
+  .workspace > .panel:nth-of-type(2) {
+    order: 1;
+  }
+  .workspace > .panel:nth-of-type(3) {
+    order: 2;
+  }
+  /* Garis penghubung bbox -> kartu hanya masuk akal di layout 3 kolom */
+  .workspace > .connectors {
+    display: none;
+  }
+}
+/* Tablet: foto & hasil berdampingan, asisten di bawah selebar penuh */
+@media (min-width: 800px) and (max-width: 1100px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    align-items: start;
+  }
+  .workspace > .panel:nth-of-type(1) {
+    grid-column: 1 / -1;
+  }
+  .workspace > .panel:nth-of-type(1) .panel-body {
+    max-height: 340px;
+    overflow-y: auto;
+  }
+}
+@media (max-width: 799px) {
+  .workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .workspace > .panel:nth-of-type(1) .panel-body {
+    max-height: 360px;
+    overflow-y: auto;
+  }
+}
+@media (max-width: 640px) {
+  .shell {
+    padding: 10px 10px 28px;
+  }
+  .panel-head {
+    padding: 9px 12px;
+  }
+  .panel-body {
+    padding: 12px;
+  }
+  .verdict {
+    justify-content: center;
+    text-align: center;
+  }
+  .verdict-text p {
+    margin-inline: auto;
+  }
+  .stat-row {
+    flex-wrap: wrap;
+  }
+  .hist-card {
+    width: 148px;
+  }
+  .footer-note {
+    font-size: 12px;
+    padding: 0 6px;
+  }
+}
+
+/* ---------- Modal ---------- */
+.modal-backdrop {
+  overflow-y: auto;
+}
+.modal {
+  max-width: 100%;
+}
+.modal-actions {
+  flex-wrap: wrap;
+}
+@media (max-width: 640px) {
+  .modal-backdrop {
+    padding: 10px;
+    align-items: flex-end;
+  }
+  .modal-actions > button {
+    flex: 1 1 auto;
+    justify-content: center;
+  }
+}
+
+/* ---------- Bar project ---------- */
+@media (max-width: 640px) {
+  .project-bar {
+    padding: 8px 10px;
+  }
+  .project-left {
+    flex: 1 1 100%;
+  }
+  .project-right {
+    flex: 1 1 100%;
+    justify-content: flex-end;
   }
 }

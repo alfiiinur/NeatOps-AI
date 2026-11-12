@@ -8,7 +8,7 @@ import {
   validateProjectName,
   PROJECTS_KEY,
   CURRENT_PROJECT_KEY,
-} from "../src/lib/projects.js";
+} from "../src/lib/shared/projects.js";
 
 function memStorage(initial = {}) {
   const map = new Map(Object.entries(initial));
