@@ -25,6 +25,7 @@
           <img src={h.thumb} alt="" />
           <div class="hist-card-body">
             <div class="hist-name">{h.name}</div>
+            {#if h.projectName}<div style="font-family:var(--mono);font-size:10.5px;letter-spacing:.5px;text-transform:uppercase;color:var(--amber)">{h.projectName}</div>{/if}
             <div class="hist-sub">
               <span>skor {h.score}</span>
               <span>{fmtTime(h.ts)}</span>

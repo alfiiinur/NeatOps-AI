@@ -144,3 +144,77 @@ export async function makeThumb(dataUrl, width = 320) {
   canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
   return canvas.toDataURL("image/jpeg", 0.7);
 }
+
+/** Potong area temuan (bbox ternormalisasi [x,y,w,h]) jadi foto tersendiri. */
+export async function cropFinding(dataUrl, bbox, width = 480) {
+  const img = await loadImage(dataUrl);
+  const pad = 0.03;
+  let [x, y, w, h] = bbox;
+  x = Math.min(Math.max(x - pad, 0), 1);
+  y = Math.min(Math.max(y - pad, 0), 1);
+  w = Math.min(w + pad * 2, 1 - x);
+  h = Math.min(h + pad * 2, 1 - y);
+  const sx = Math.round(x * img.width);
+  const sy = Math.round(y * img.height);
+  const sw = Math.max(Math.round(w * img.width), 8);
+  const sh = Math.max(Math.round(h * img.height), 8);
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = Math.min(Math.round((width * sh) / sw), width * 2);
+  canvas.getContext("2d").drawImage(img, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL("image/jpeg", 0.8);
+}
+
+/**
+ * Gambar "sesudah (simulasi)": foto asli + overlay rute kabel ideal
+ * (setara tampilan tab Visual rapi) + strip label simulasi.
+ */
+export async function makeTidyAfter(dataUrl, routes, width = 880) {
+  const img = await loadImage(dataUrl);
+  const scale = Math.min(1, width / img.width);
+  const W = Math.round(img.width * scale);
+  const H = Math.round(img.height * scale);
+  const canvas = document.createElement("canvas");
+  canvas.width = W;
+  canvas.height = H;
+  const ctx = canvas.getContext("2d");
+  ctx.drawImage(img, 0, 0, W, H);
+  // Overlay rute: garis siku dari → ke + titik ujung (seperti routePath di UI).
+  ctx.lineWidth = Math.max(2, W / 320);
+  ctx.setLineDash([W / 110, W / 220]);
+  for (const r of routes ?? []) {
+    const x1 = r.dari[0] * W;
+    const y1 = r.dari[1] * H;
+    const x2 = r.ke[0] * W;
+    const y2 = r.ke[1] * H;
+    const mx = (x1 + x2) / 2;
+    ctx.strokeStyle = r.warna;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1);
+    ctx.lineTo(mx, y1);
+    ctx.lineTo(mx, y2);
+    ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = r.warna;
+    ctx.beginPath();
+    ctx.arc(x1, y1, W / 130, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.lineWidth = Math.max(2, W / 400);
+    ctx.beginPath();
+    ctx.arc(x2, y2, W / 110, 0, Math.PI * 2);
+    ctx.stroke();
+    ctx.lineWidth = Math.max(2, W / 320);
+    ctx.setLineDash([W / 110, W / 220]);
+  }
+  ctx.setLineDash([]);
+  // Strip label agar jelas ini simulasi, bukan foto asli.
+  const stripH = Math.round(H * 0.075);
+  ctx.fillStyle = "rgba(11,14,19,0.82)";
+  ctx.fillRect(0, H - stripH, W, stripH);
+  ctx.fillStyle = "#c9ee5b";
+  ctx.font = `700 ${Math.round(stripH * 0.44)}px monospace`;
+  ctx.textBaseline = "middle";
+  ctx.fillText("SESUDAH (SIMULASI) — overlay rute kabel ideal", W * 0.03, H - stripH / 2);
+  return canvas.toDataURL("image/jpeg", 0.85);
+}

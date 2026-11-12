@@ -18,7 +18,6 @@
     const ar = (w * ratio) / h;
     return `aspect-ratio:${ar}; width:min(calc(100% - 26px), ${(180 * ar).toFixed(0)}px); background-image:url(${photo.dataUrl}); background-size:${100 / w}% ${100 / h}%; background-position:${px}% ${py}%;`;
   }
-  let compare = $state(50);
 
   const sevLabel = { kritis: "Kritis", sedang: "Sedang", ringan: "Ringan" };
   const barColor = (s) => (s >= 80 ? "var(--ok)" : s >= 55 ? "var(--warn)" : "var(--bad)");
@@ -144,11 +143,14 @@
           </div>
         {/each}
       {:else if tab === "visual"}
-        <div class="compare">
-          <img src={photo.dataUrl} alt="Foto asli sebelum dirapikan" />
-          <div class="compare-after" style="clip-path: inset(0 {100 - compare}% 0 0)">
-            <div class="compare-after-inner">
-              <img src={photo.dataUrl} alt="" aria-hidden="true" />
+        <div class="compare-2up">
+          <figure class="shot">
+            <img src={photo.dataUrl} alt="Foto asli sebelum dirapikan" />
+            <figcaption><span class="shot-tag before">SEBELUM</span> foto asli</figcaption>
+          </figure>
+          <figure class="shot">
+            <div class="after-frame">
+              <img src={photo.dataUrl} alt="Simulasi sesudah dirapikan" />
               <svg class="after-overlay" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true">
                 {#each result.tidy.routes as r}
                   <path d={routePath(r)} fill="none" stroke={r.warna} stroke-width="1.4" stroke-dasharray="2.5 1.5" vector-effect="non-scaling-stroke" />
@@ -157,11 +159,8 @@
                 {/each}
               </svg>
             </div>
-          </div>
-          <span class="compare-label left">SEBELUM</span>
-          <span class="compare-label right">SESUDAH (SIMULASI)</span>
-          <div class="compare-handle" style="left:{compare}%"></div>
-          <input type="range" min="0" max="100" bind:value={compare} aria-label="Geser pembanding sebelum dan sesudah" />
+            <figcaption><span class="shot-tag after">SESUDAH (SIMULASI)</span> overlay rute kabel</figcaption>
+          </figure>
         </div>
 
         <div class="tidy-grid">
@@ -214,10 +213,46 @@
         <div class="btn-row" style="margin-top:14px">
           <button onclick={onDownload}>
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" /><polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" /></svg>
-            Unduh laporan (.md)
+            Bagikan / unduh laporan
           </button>
         </div>
       {/if}
     </div>
   {/if}
 </div>
+
+<style>
+  .compare-2up { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  @media (max-width: 640px) {
+    .compare-2up { grid-template-columns: 1fr; }
+  }
+  .compare-2up .shot {
+    margin: 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #000;
+  }
+  .compare-2up .shot img { display: block; width: 100%; height: auto; }
+  .compare-2up .after-frame { position: relative; }
+  .compare-2up figcaption {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    font-size: 12px;
+    color: var(--muted);
+    background: var(--panel);
+  }
+  .shot-tag {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    border-radius: 4px;
+    padding: 2px 8px;
+    white-space: nowrap;
+  }
+  .shot-tag.before { background: var(--panel-2); border: 1px solid var(--line); color: var(--muted); }
+  .shot-tag.after { background: var(--lime); border: 1px solid var(--lime-edge); color: #243006; }
+</style>
