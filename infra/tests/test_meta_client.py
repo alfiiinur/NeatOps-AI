@@ -4,8 +4,8 @@ from types import SimpleNamespace
 import pytest
 from PIL import Image
 
-from app.config import Settings
-from app.meta_client import MetaApiError, MetaClient, prepare_image
+from app.core.config import Settings
+from app.clients.meta_client import MetaApiError, MetaClient, prepare_image
 
 
 def make_jpeg(w=200, h=100) -> bytes:

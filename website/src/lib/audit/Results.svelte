@@ -1,5 +1,6 @@
 <script>
   import { t, tx } from "../core/i18n.svelte.js";
+  import Rack3DView from "./Rack3DView.svelte";
 
   let { photo, result, tab, onTab, onHighlight, onDownload } = $props();
 
@@ -88,6 +89,7 @@
       </button>
       <button role="tab" class:active={tab === "visual"} onclick={() => onTab("visual")}>{t("res.tabVisual")}</button>
       <button role="tab" class:active={tab === "saran"} onclick={() => onTab("saran")}>{t("res.tabAdvice")}</button>
+      <button role="tab" class:active={tab === "3d"} onclick={() => onTab("3d")}>{t("res.tab3d")}</button>
     </div>
 
     <div class="panel-body scroll-body">
@@ -178,6 +180,12 @@
                   <div><span>{t("res.hwKind")}</span><b>{tx(h.jenis)}</b></div>
                   <div><span>{t("res.hwType")}</span><b>{tx(h.tipe)}</b></div>
                   <div><span>{t("res.hwQty")}</span><b>×{h.jumlah}</b></div>
+                  {#if h.u_start != null}
+                    <div>
+                      <span>{t("res.hwPos")}</span>
+                      <b>U{h.u_start}{h.u_size > 1 ? `–U${h.u_start + h.u_size - 1}` : ""}{h.u_uncertain ? ` ${t("res.hwPosUncertain")}` : ""}</b>
+                    </div>
+                  {/if}
                 </div>
                 <div class="hw-conf">{t("res.confidence", { n: h.keyakinan })}</div>
               </div>
@@ -257,6 +265,8 @@
         </div>
 
         <div class="note-sim">{t("res.simNote")}</div>
+      {:else if tab === "3d"}
+        <Rack3DView {photo} {result} />
       {:else if tab === "saran"}
         {#each result.advice as a}
           <div class="advice">

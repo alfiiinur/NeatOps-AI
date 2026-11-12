@@ -14,8 +14,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from urllib.parse import parse_qs, unquote, urlparse
 
-from .detect import UNIT_CLASSES
-from .geometry import BBox
+from ..vision.detect import UNIT_CLASSES
+from ..common.geometry import BBox
 from .pipeline import RackAnalysis
 
 MODEL_VERSION = "neatops-sam-muse"

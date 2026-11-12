@@ -5,6 +5,8 @@
   import ProjectBar from "../shared/ProjectBar.svelte";
   import RackChat from "./RackChat.svelte";
   import RackThree from "./RackThree.svelte";
+  import DeskBuilder from "./DeskBuilder.svelte";
+  import { DEFAULT_DESK, clampDesk } from "./deskSimulator.js";
   import {
     newRackProject,
     loadRackProjects,
@@ -29,6 +31,14 @@
   let result = $state(null);
   let resultTab = $state("susunan");
 
+  // Mode meja kerja (state terpisah dari rak; dirender oleh DeskBuilder).
+  let mode = $state("rack"); // "rack" | "desk"
+  let desk = $state({ ...DEFAULT_DESK });
+  let deskName = $state("Meja Kerja Utama");
+  let deskStep = $state(1);
+  let deskQty = $state({});
+  let deskResult = $state(null);
+
   let dragOver = $state(false);
   let fileInput = $state(null);
   let generating = $state(false);
@@ -46,6 +56,13 @@
       : null;
     step = p.step === 3 && !p.result ? 2 : (p.step ?? 1);
     resultTab = "susunan";
+
+    mode = p.mode === "desk" ? "desk" : "rack";
+    desk = clampDesk(p.desk);
+    deskName = p.deskName ?? "Meja Kerja Utama";
+    deskQty = { ...(p.deskQty ?? {}) };
+    deskResult = p.deskResult?.items ? { ...p.deskResult, desk: clampDesk(p.deskResult.desk) } : null;
+    deskStep = p.deskStep === 3 && !deskResult ? 2 : (p.deskStep ?? 1);
   }
 
   function persist() {
@@ -64,6 +81,12 @@
       rackU: clampU(rackU),
       selectedQty: $state.snapshot(selectedQty),
       result: $state.snapshot(result),
+      mode,
+      desk: $state.snapshot(desk),
+      deskName,
+      deskStep,
+      deskQty: $state.snapshot(deskQty),
+      deskResult: $state.snapshot(deskResult),
     };
     if (!ready) return;
     untrack(() => {
@@ -442,6 +465,28 @@
     onDelete={deleteProject}
   />
 
+  <!-- Pilih mode: rak server atau meja kerja -->
+  <div class="rb-mode" role="group" aria-label="Jenis rakitan">
+    <button class="rb-mode-btn" class:active={mode === "rack"} aria-pressed={mode === "rack"} disabled={generating} onclick={() => (mode = "rack")}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 8h16M4 13h16M8 17h.01"/></svg>
+      Rak Server
+    </button>
+    <button class="rb-mode-btn" class:active={mode === "desk"} aria-pressed={mode === "desk"} disabled={generating} onclick={() => (mode = "desk")}>
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="11" rx="1.5"/><path d="M8 20h8M12 15v5"/></svg>
+      Meja Kerja
+    </button>
+  </div>
+
+  {#if mode === "desk"}
+    <DeskBuilder
+      bind:desk
+      bind:deskName
+      bind:step={deskStep}
+      bind:qty={deskQty}
+      bind:result={deskResult}
+      chatKey={currentId}
+    />
+  {:else}
   <!-- Stepper ringkas -->
   <div class="rb-toolbar">
     <nav class="rb-stepper" aria-label="Langkah rakit rak">
@@ -906,12 +951,25 @@
     </section>
   </div>
 
+  {/if}
+
   <div class="footer-note">
-    NeatOps AI · Rakit Rak · susunan disimulasikan berdasarkan berat, daya, dan praktik TIA-942
+    {#if mode === "desk"}
+      NeatOps AI · Rakit Meja Kerja · penataan disimulasikan dari ukuran fisik perangkat, daya, dan beban meja
+    {:else}
+      NeatOps AI · Rakit Rak · susunan disimulasikan berdasarkan berat, daya, dan praktik TIA-942
+    {/if}
   </div>
 </main>
 
 <style>
+  /* ── Pemilih mode ── */
+  .rb-mode { display: inline-flex; gap: 4px; margin-bottom: 12px; background: var(--panel); border: 1px solid var(--line-soft); border-radius: 10px; padding: 4px; }
+  .rb-mode-btn { display: inline-flex; align-items: center; gap: 7px; border: 1px solid transparent; background: transparent; border-radius: 7px; padding: 7px 16px; font-size: 13.5px; font-weight: 600; color: var(--muted); }
+  .rb-mode-btn:hover:not(:disabled):not(.active) { background: var(--panel-2); color: var(--text); }
+  .rb-mode-btn.active { background: var(--lime); color: var(--on-lime); border-color: var(--lime-edge); }
+  .rb-mode-btn:disabled { opacity: 0.6; }
+
   /* ── Toolbar & stepper ringkas ── */
   .rb-toolbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 12px; }
   .rb-stepper {

@@ -7,10 +7,10 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel
 
+from ..clients.meta_client import MetaApiError, MetaClient
+from ..common.geometry import BBox, Detection
+from ..common.imaging import crop_region
 from .detect import Unit, area, intersection
-from .geometry import BBox, Detection
-from .imaging import crop_region
-from .meta_client import MetaApiError, MetaClient
 
 log = logging.getLogger(__name__)
 
@@ -25,6 +25,7 @@ MAX_CABLE_BOX = 0.9  # kotak yang hampir seluruh gambar adalah noise, bukan kabe
 CLUSTER_OVERLAP = 0.25  # irisan / luas kotak terkecil agar dua kabel dianggap satu kelompok
 UNIT_TOUCH_Y = 0.5  # bagian tinggi unit yang harus dilalui kelompok kabel agar unit dianggap tersentuh
 MAX_ASSESSED_CLUSTERS = 4
+MIN_ASSESS_AREA = 0.004  # luas minimum kelompok (ternormalisasi, ~0,4% gambar) agar layak dinilai Muse
 CROP_PAD = 0.05
 
 ASSESS_SCHEMA = {
@@ -149,7 +150,7 @@ def link_units(clusters: list[CableCluster], units: list[Unit]) -> None:
 async def assess_cluster(client: MetaClient, jpeg: bytes, cluster: CableCluster) -> CableAssessment | None:
     x, y, w, h = cluster.bbox
     region = (x - CROP_PAD * w, y - CROP_PAD * h, w * (1 + 2 * CROP_PAD), h * (1 + 2 * CROP_PAD))
-    crop, _ = crop_region(jpeg, region, min_width=768)
+    crop, _ = crop_region(jpeg, region, min_width=getattr(getattr(client, "settings", None), "crop_min_width", 512))
     try:
         data = await client.chat_json(
             system=ASSESS_SYSTEM,
@@ -165,7 +166,8 @@ async def assess_cluster(client: MetaClient, jpeg: bytes, cluster: CableCluster)
 
 
 async def assess_clusters(client: MetaClient, jpeg: bytes, clusters: list[CableCluster]) -> None:
-    top = clusters[:MAX_ASSESSED_CLUSTERS]
+    # Kelompok sangat kecil tidak bisa dinilai dari foto (hanya membuang panggilan); aturan geometri tetap jalan.
+    top = [c for c in clusters if area(c.bbox) >= MIN_ASSESS_AREA][:MAX_ASSESSED_CLUSTERS]
     results = await asyncio.gather(*(assess_cluster(client, jpeg, c) for c in top))
     for c, r in zip(top, results):
         c.assessment = r

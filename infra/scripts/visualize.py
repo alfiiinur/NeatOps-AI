@@ -17,11 +17,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from PIL import Image, ImageDraw, ImageFont  # noqa: E402
 
-from app.config import get_settings  # noqa: E402
-from app.knowledge import load_knowledge_cached  # noqa: E402
-from app.main import cluster_to_dict, unit_to_hardware  # noqa: E402
-from app.meta_client import MetaApiError, MetaClient, prepare_image  # noqa: E402
-from app.pipeline import analyze_rack  # noqa: E402
+from app.core.config import get_settings  # noqa: E402
+from app.clients.knowledge import load_knowledge_cached  # noqa: E402
+from app.api.main import cluster_to_dict, unit_to_hardware  # noqa: E402
+from app.clients.meta_client import MetaApiError, MetaClient, prepare_image  # noqa: E402
+from app.workflows.pipeline import analyze_rack  # noqa: E402
 
 EXTS = {".jpg", ".jpeg", ".png", ".webp"}
 
@@ -70,13 +70,15 @@ async def run(images: Path, out: Path, rack_u: int | None) -> None:
     for p in files:
         print(f"\n== {p.name}", flush=True)
         data = p.read_bytes()
+        before = dict(client.stats)
         try:
             r = await analyze_rack(client, data, rack_u=rack_u, knowledge=knowledge)
         except MetaApiError as e:
             print(f"  gagal: {e}")
             continue
         positions = r.positions or [None] * len(r.units)
-        hardware = [unit_to_hardware(u, pos) for u, pos in zip(r.units, positions)]
+        unc = r.u_uncertain or [False] * len(r.units)
+        hardware = [unit_to_hardware(u, pos, q) for u, pos, q in zip(r.units, positions, unc)]
         summary = {
             "image": {"width": r.width, "height": r.height},
             "u_total": r.grid.total_u if r.grid else None,
@@ -90,8 +92,12 @@ async def run(images: Path, out: Path, rack_u: int | None) -> None:
         draw(prepare_image(data)[0], r, hardware).save(out / f"{p.stem}_hasil.jpg", quality=90)
         print(f"  rak {summary['u_total']}U · {len(hardware)} unit · {sum(c.count for c in r.cables)} kabel · "
               f"{len(r.empty_slots)} slot kosong · {len(r.findings)} temuan kabel")
+        used = {k: client.stats[k] - before[k] for k in client.stats}
+        print(f"  panggilan API: SAM {used['sam']} · Muse {used['muse']} · dari cache {used['cached']}")
         for i, hw in enumerate(hardware, 1):
             u = f"U{hw['u_start']}+{hw['u_size']}" if "u_start" in hw else "-"
+            if hw.get("u_uncertain"):
+                u += "?"
             print(f"  #{i} {hw['nama']:<14} {u:<8} {hw['merek'] or '(merek tak terbaca)'}  [{hw['confidence']}]")
 
 

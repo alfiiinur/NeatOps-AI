@@ -8,13 +8,14 @@ Penomoran U mengikuti konvensi rak: U1 di paling bawah.
 from dataclasses import dataclass
 from statistics import median
 
-from .geometry import BBox
+from ..common.geometry import BBox
 
 U_MM = 44.45
 PANEL_MM = 482.6
 MIN_COVERAGE_WIDTH = 0.5  # unit lebih sempit dari 50% lebar referensi (mis. PDU vertikal) tidak menutup slot
 MIN_GAP_U = 0.6  # celah lebih pendek dari 0,6U diabaikan (bingkai, bayangan, sambungan)
 MAX_TOTAL_U = 60
+MAX_PLAUSIBLE_U = 6  # perangkat rack lebih tinggi dari ini (kecuali sasis khusus) hampir pasti bukan panel U biasa
 
 
 @dataclass(frozen=True)
@@ -71,9 +72,28 @@ def build_grid(
     return RackGrid(top, bottom, u_h, total, ref_w, x0, x1)
 
 
+def u_uncertain(bbox: BBox, grid: RackGrid) -> bool:
+    """True bila posisi/ukuran U unit ini tidak bisa dipercaya dan `locate` terpaksa memotongnya.
+
+    Penyebab umum: perangkat tower/free-standing (UPS tower, controller) yang bukan panel rack berukuran U,
+    atau kotak yang melewati batas rak. Ukuran > MAX_PLAUSIBLE_U juga dicurigai (panel rack jarang setinggi itu).
+    """
+    raw_size = max(1, round(bbox[3] / grid.u_h))
+    top_index = round((bbox[1] - grid.top) / grid.u_h)
+    return (
+        raw_size > MAX_PLAUSIBLE_U
+        or raw_size > grid.total_u
+        or top_index < 0
+        or top_index + raw_size > grid.total_u
+    )
+
+
 def locate(bbox: BBox, grid: RackGrid) -> tuple[int, int]:
-    """(u_start, u_size) untuk sebuah unit. u_start = nomor U terbawah yang ditempati (U1 di dasar)."""
-    u_size = max(1, round(bbox[3] / grid.u_h))
+    """(u_start, u_size) untuk sebuah unit. u_start = nomor U terbawah yang ditempati (U1 di dasar).
+
+    u_size dibatasi ke total U rak; cek `u_uncertain` untuk tahu apakah hasilnya dipotong/tidak masuk akal.
+    """
+    u_size = min(grid.total_u, max(1, round(bbox[3] / grid.u_h)))
     top_index = round((bbox[1] - grid.top) / grid.u_h)  # 0 = slot teratas
     u_start = grid.total_u - (top_index + u_size) + 1
     u_start = max(1, min(grid.total_u - u_size + 1, u_start))

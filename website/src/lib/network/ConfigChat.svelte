@@ -1,12 +1,17 @@
 <script>
   import { onMount, tick, untrack } from "svelte";
   import { answerConfigQuestion, chipsFor } from "./configAssistant.js";
+  import { AiChat } from "../shared/aiChat.svelte.js";
+  import ModelNote from "../shared/ModelNote.svelte";
+  import ChatComposer from "../shared/ChatComposer.svelte";
+  import { withAttachmentNote, skippedNote, OFFLINE_ATTACH_TEXT } from "../shared/attachments.js";
 
   // sections = daftar nama section perangkat aktif.
   let {
     device,
     deviceLabel,
     sections,
+    entries = [],
     activeSection,
     onFilter,
     onDevice,
@@ -45,19 +50,46 @@
     });
   });
 
-  function send(text) {
-    const q = text.trim();
-    if (!q) return;
+  const ai = new AiChat("config");
+  let attachments = $state([]);
+  onMount(() => ai.init());
+
+  function buildContext() {
+    return {
+      device,
+      deviceLabel,
+      activeSection,
+      sections,
+      config: entries.map((e) => ({ section: e.section, desc: e.desc, code: e.code })),
+    };
+  }
+
+  async function send(text) {
+    const files = attachments;
+    const q = text.trim() || (files.length ? "Jelaskan lampiran ini." : "");
+    if (!q || ai.thinking) return;
+    const history = messages.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text }));
     input = "";
-    push("user", q);
+    attachments = [];
+    push("user", withAttachmentNote(q, files));
+    // Dengan lampiran: langsung ke AI (aturan lokal tidak bisa membaca lampiran).
+    if (files.length) {
+      const res = await ai.ask(q, { history, context: buildContext(), files });
+      return push("bot", res ? res.answer + skippedNote(res.skipped) : OFFLINE_ATTACH_TEXT);
+    }
     const r = answerConfigQuestion(q, { device, deviceLabel, sections, activeSection });
+    // Pindah perangkat / filter section = aksi UI: jawab lokal agar teks cocok dengan yang terjadi.
     if (r.device) {
       skipAnnounce = true;
       onDevice(r.device);
-    } else if (r.filter !== undefined) {
-      onFilter(r.filter);
+      return push("bot", r.text);
     }
-    push("bot", r.text);
+    if (r.filter !== undefined) {
+      onFilter(r.filter);
+      return push("bot", r.text);
+    }
+    const res = await ai.ask(q, { history, context: buildContext() });
+    push("bot", res ? res.answer : r.text);
   }
 </script>
 
@@ -68,6 +100,7 @@
       {#each messages as m}
         <div class="msg {m.from}">{m.text}</div>
       {/each}
+      {#if ai.thinking}<div class="msg bot">…</div>{/if}
     </div>
   </div>
   <div class="chat-chips">
@@ -75,10 +108,15 @@
       <button type="button" onclick={() => send(c)}>{c}</button>
     {/each}
   </div>
-  <form class="chat-form" onsubmit={(e) => { e.preventDefault(); send(input); }}>
-    <input bind:value={input} placeholder="Tanya soal config ini..." aria-label="Pesan untuk asisten AI" />
-    <button type="submit">Kirim</button>
-  </form>
+  <ChatComposer
+    bind:value={input}
+    bind:attachments
+    placeholder="Tanya soal config ini..."
+    ariaLabel="Pesan untuk asisten AI"
+    busy={ai.thinking}
+    onSubmit={() => send(input)}
+  />
+  <ModelNote {ai} />
 </div>
 
 <style>

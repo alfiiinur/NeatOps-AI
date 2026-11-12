@@ -3,7 +3,7 @@
   import { createRackScene } from "./rackThreeScene.js";
   import RackIso from "./RackIso.svelte";
 
-  let { slots, rackU, onNudge } = $props();
+  let { slots, rackU, onNudge = () => {}, readonly = false, compact = false } = $props();
 
   let canvas = $state(null);
   let viewportEl = $state(null);
@@ -15,6 +15,8 @@
   let auto = $state(false);
   let showCables = $state(true);
   let showLabels = $state(true);
+  // Mode compact: kontrol disembunyikan di balik tombol hamburger supaya tidak menumpuk.
+  let menuOpen = $state(false);
 
   const selected = $derived(slots.find((s) => s.key === selectedKey) ?? null);
   const selIdx = $derived(selected ? slots.findIndex((s) => s.key === selectedKey) : -1);
@@ -34,6 +36,7 @@
   function goView(name) {
     view = name;
     scene?.setView(name);
+    if (compact) menuOpen = false;
   }
 
   function resetAll() {
@@ -101,11 +104,14 @@
   });
 </script>
 
+<svelte:window onkeydown={(e) => e.key === "Escape" && (menuOpen = false)} />
+
 {#if !webglOK}
   <RackIso slots={slots} />
 {:else}
   <div
     class="rt-layout"
+    class:compact
     data-view={view ?? "bebas"}
     data-auto={auto}
     data-cables={showCables}
@@ -163,7 +169,7 @@
             <div><span>Tinggi</span><b>{selected.unitHeight}U (±{(selected.unitHeight * 4.445).toFixed(1).replace(".", ",")} cm)</b></div>
             <div><span>Fungsi</span><b>{selected.auto ? "Menutup slot kosong untuk aliran udara." : selected.desc}</b></div>
           </div>
-          {#if !selected.auto}
+          {#if !selected.auto && !readonly}
             <div class="rt-move">
               <button disabled={selIdx <= 0} onclick={() => onNudge(selectedKey, -1)} aria-label="Naikkan {selected.nama}">↑ Naik 1U</button>
               <button disabled={selIdx >= slots.length - 1} onclick={() => onNudge(selectedKey, 1)} aria-label="Turunkan {selected.nama}">↓ Turun 1U</button>
@@ -171,7 +177,22 @@
           {/if}
         </div>
       {/if}
-      <div class="rt-bar" role="toolbar" aria-label="Kontrol tampilan 3D">
+      {#if compact}
+        <button
+          class="rt-burger"
+          class:open={menuOpen}
+          aria-label="Kontrol tampilan 3D"
+          aria-expanded={menuOpen}
+          aria-controls="rt-bar"
+          onclick={() => (menuOpen = !menuOpen)}
+        >
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+            {#if menuOpen}<path d="M6 6l12 12M18 6L6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}
+          </svg>
+        </button>
+      {/if}
+      {#if !compact || menuOpen}
+      <div class="rt-bar" id="rt-bar" role="toolbar" aria-label="Kontrol tampilan 3D">
         <button class:active={view === "perspektif"} onclick={() => goView("perspektif")}>Perspektif</button>
         <button class:active={view === "depan"} onclick={() => goView("depan")}>Depan</button>
         <button class:active={view === "samping"} onclick={() => goView("samping")}>Samping</button>
@@ -182,6 +203,7 @@
         <button class:active={showLabels} aria-pressed={showLabels} onclick={() => (showLabels = !showLabels)}>Label nomor</button>
         <button onclick={resetAll}>Reset kamera</button>
       </div>
+      {/if}
     </div>
   </div>
 {/if}
@@ -318,22 +340,27 @@
   .rt-rows b { font-weight: 600; text-align: right; }
   .rt-move { display: flex; gap: 6px; }
   .rt-move button { flex: 1; font-size: 12.5px; padding: 6px 4px; }
+  /* Dipusatkan dengan left/right + margin auto (bukan left:50% + translate),
+     supaya toolbar boleh memakai lebar penuh area 3D dan tidak terlipat
+     di setengah lebar. */
   .rt-bar {
     position: absolute;
-    left: 50%;
+    left: 10px;
+    right: 10px;
     bottom: 10px;
-    transform: translateX(-50%);
+    width: fit-content;
+    max-width: calc(100% - 20px);
+    margin-inline: auto;
     display: flex;
     align-items: center;
     gap: 4px;
     flex-wrap: wrap;
     justify-content: center;
-    max-width: calc(100% - 16px);
     background: rgba(10, 13, 18, 0.86);
     backdrop-filter: blur(6px);
     border: 1px solid var(--line);
-    border-radius: 999px;
-    padding: 6px 8px;
+    border-radius: 12px;
+    padding: 5px 6px;
   }
   .rt-bar button {
     border: 1px solid transparent;
@@ -347,7 +374,7 @@
   }
   .rt-bar button:hover { border-color: var(--faint); color: #fff; }
   .rt-bar button.active { background: var(--lime); border-color: var(--lime-edge); color: #243006; font-weight: 600; }
-  .rt-sep { width: 1px; align-self: stretch; background: var(--line); margin: 2px 2px; }
+  .rt-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; flex: none; }
   .rt-bar button:focus-visible,
   .rt-list li button:focus-visible,
   .rt-badge:focus-visible,
@@ -356,6 +383,50 @@
     outline: 2px solid var(--lime);
     outline-offset: 1px;
   }
+  /* Panel sempit (mis. hasil analisis): 3D di atas dan lebar penuh, daftar unit di bawahnya. */
+  .rt-layout.compact { grid-template-columns: minmax(0, 1fr); }
+  .rt-layout.compact .rt-view { order: 1; height: clamp(420px, 60vh, 640px); }
+  .rt-layout.compact .rt-list { order: 2; max-height: 220px; }
+  .rt-burger {
+    position: absolute;
+    top: 10px;
+    left: 10px;
+    z-index: 5;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    padding: 0;
+    color: #dbe2ee;
+    background: rgba(10, 13, 18, 0.86);
+    backdrop-filter: blur(6px);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    cursor: pointer;
+  }
+  .rt-burger:hover,
+  .rt-burger.open { border-color: var(--lime-edge); color: #fff; }
+  .rt-burger:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  /* Menu hamburger: daftar tombol vertikal di bawah tombol, bukan bar melayang di dasar. */
+  .rt-layout.compact .rt-bar {
+    top: 56px;
+    bottom: auto;
+    left: 10px;
+    right: auto;
+    width: 190px;
+    margin-inline: 0;
+    flex-direction: column;
+    align-items: stretch;
+    flex-wrap: nowrap;
+    gap: 2px;
+    border-radius: 12px;
+    padding: 6px;
+    z-index: 5;
+  }
+  .rt-layout.compact .rt-bar button { text-align: left; border-radius: 8px; }
+  .rt-layout.compact .rt-sep { width: auto; height: 1px; margin: 4px 2px; }
+  .rt-layout.compact .rt-detail { width: min(252px, calc(100% - 20px)); }
   @media (max-width: 900px) {
     .rt-layout { grid-template-columns: 1fr; }
     .rt-list { max-height: 190px; }

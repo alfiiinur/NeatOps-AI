@@ -3,8 +3,8 @@
 from dataclasses import dataclass
 from statistics import median
 
-from .geometry import BBox, Detection
-from .meta_client import MetaClient
+from ..clients.meta_client import MetaClient
+from ..common.geometry import BBox, Detection
 
 MIN_CONFIDENCE = 0.3
 DEDUPE_IOU = 0.6
@@ -87,6 +87,103 @@ def dedupe(units: list[Unit], iou_threshold: float = DEDUPE_IOU) -> list[Unit]:
     return kept
 
 
+def _children(units: list[Unit], i: int, inner_fraction: float = 0.8, area_ratio: float = 1.5) -> list[int]:
+    """Indeks kotak yang hampir seluruhnya berada di dalam units[i] dan jauh lebih kecil darinya."""
+    big = units[i]
+    return [
+        j
+        for j, small in enumerate(units)
+        if j != i
+        and area(small.bbox) * area_ratio <= area(big.bbox)
+        and contained_fraction(small.bbox, big.bbox) >= inner_fraction
+    ]
+
+
+def drop_contained_duplicates(
+    units: list[Unit], contained: float = 0.9, min_size_ratio: float = 0.5
+) -> list[Unit]:
+    """Buang kotak yang hampir seluruhnya berada di dalam kotak lain dengan ukuran sebanding (objek yang sama).
+
+    IoU saja meloloskan pasangan seperti ini: kotak kecil di dalam kotak lain punya IoU rendah walau keduanya
+    perangkat yang sama (mis. controller yang terdeteksi dua kali). Yang peringkatnya lebih rendah (prioritas kelas,
+    lalu confidence) dibuang. Pembungkus agregat (>= 2 anak) dilewati: itu urusan `drop_aggregate_boxes`.
+    """
+    aggregate = {i for i in range(len(units)) if len(_children(units, i)) >= 2}
+    order = sorted(range(len(units)), key=lambda i: _rank(units[i]), reverse=True)
+    kept: list[int] = []
+    for i in order:
+        u = units[i]
+        dup = False
+        for k in kept:
+            other = units[k]
+            small, big, big_idx = (u, other, k) if area(u.bbox) <= area(other.bbox) else (other, u, i)
+            if big_idx in aggregate:
+                continue
+            if (
+                contained_fraction(small.bbox, big.bbox) >= contained
+                and area(small.bbox) >= min_size_ratio * area(big.bbox)
+            ):
+                dup = True
+                break
+        if not dup:
+            kept.append(i)
+    keep = set(kept)
+    return [u for i, u in enumerate(units) if i in keep]
+
+
+def drop_nested(
+    units: list[Unit], protect=lambda big: False, contained: float = 0.9, max_size_ratio: float = 0.5
+) -> list[Unit]:
+    """Buang kotak kecil yang bersarang di dalam kotak perangkat lain (sub-bagian, bukan perangkat sendiri).
+
+    Tidak dibuang bila:
+    - pembungkusnya punya >= 2 anak (modul sejajar / tumpukan: ditangani `drop_aggregate_boxes`);
+    - pembungkus ditandai `protect(big)` (mis. shelf: perangkat di atasnya memang perangkat sendiri);
+    - kotak kecil lebih yakin daripada pembungkusnya.
+    """
+    drop: set[int] = set()
+    for i, big in enumerate(units):
+        kids = _children(units, i, inner_fraction=contained, area_ratio=1 / max_size_ratio)
+        if len(kids) != 1 or len(_children(units, i)) >= 2 or protect(big):
+            continue
+        j = kids[0]
+        if units[j].confidence <= big.confidence:
+            drop.add(j)
+    return [u for i, u in enumerate(units) if i not in drop]
+
+
+def drop_attached_fragments(
+    units: list[Unit], max_gap: float = 0.02, min_y_overlap: float = 0.85, max_area_ratio: float = 0.5
+) -> list[Unit]:
+    """Buang strip sempit tanpa identitas yang menempel di sisi perangkat lain pada baris yang sama.
+
+    Pada foto uji, satu controller terdeteksi dua kali: perangkat utuh dan satu modul sampingnya (lebih sempit,
+    tinggi sama, tanpa merek/label). Hanya unit generik yang Muse tidak bisa kenali (merek, model, dan teks label
+    kosong) yang dibuang; dua perangkat bermerek berdampingan (mis. dua switch) tidak tersentuh.
+    """
+
+    def anonymous(u: Unit) -> bool:
+        i = u.ident
+        return u.cls.priority < 0 and i is not None and not (i.merek or i.model or i.teks_label)
+
+    drop: set[int] = set()
+    for j, frag in enumerate(units):
+        if not anonymous(frag) or frag.bbox[3] <= 0:
+            continue
+        fx0, fx1 = frag.bbox[0], frag.bbox[0] + frag.bbox[2]
+        fy0, fy1 = frag.bbox[1], frag.bbox[1] + frag.bbox[3]
+        for i, host in enumerate(units):
+            if i == j or area(frag.bbox) > max_area_ratio * area(host.bbox):
+                continue
+            hx0, hx1 = host.bbox[0], host.bbox[0] + host.bbox[2]
+            y_overlap = max(0.0, min(fy1, host.bbox[1] + host.bbox[3]) - max(fy0, host.bbox[1]))
+            gap = max(hx0 - fx1, fx0 - hx1)  # negatif = saling menimpa secara horizontal
+            if y_overlap / frag.bbox[3] >= min_y_overlap and gap <= max_gap:
+                drop.add(j)
+                break
+    return [u for i, u in enumerate(units) if i not in drop]
+
+
 def drop_aggregate_boxes(
     units: list[Unit], inner_fraction: float = 0.8, min_children: int = 2, area_ratio: float = 1.5
 ) -> list[Unit]:
@@ -101,13 +198,7 @@ def drop_aggregate_boxes(
     """
     drop: set[int] = set()
     for i, big in enumerate(units):
-        children = [
-            j
-            for j, small in enumerate(units)
-            if j != i
-            and area(small.bbox) * area_ratio <= area(big.bbox)
-            and contained_fraction(small.bbox, big.bbox) >= inner_fraction
-        ]
+        children = _children(units, i, inner_fraction, area_ratio)
         if len(children) < min_children:
             continue
         tops = [units[j].bbox[1] for j in children]
@@ -148,6 +239,7 @@ def clean_units(
     """Saring keyakinan rendah, dedup (NMS), dan buang kotak gabungan. Parameter dituning di scripts/evaluate.py."""
     units = [u for u in units if u.confidence >= min_confidence and area(u.bbox) > 0]
     units = dedupe(units, iou_threshold)
+    units = drop_contained_duplicates(units)
     units = drop_aggregate_boxes(units)
     units = drop_outside_column(units)
     return sorted(units, key=lambda u: (u.bbox[1], u.bbox[0]))  # atas -> bawah

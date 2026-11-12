@@ -672,12 +672,228 @@ export const HARDWARE_CATALOG = [
       <circle cx="132" cy="26" r="2" fill="#2a9d5c"/>
     </svg>`,
   },
+  // ── Perangkat Kantor: Monitor 15", 24", 25" ──
+  ...[
+    {
+      id: "monitor-15",
+      inch: 15,
+      merek: 'Dell E1520H (15")',
+      beratKg: 2.8,
+      watt: 18,
+      w: 70,
+    },
+    {
+      id: "monitor-24",
+      inch: 24,
+      merek: 'Dell P2422H (24")',
+      beratKg: 4.5,
+      watt: 25,
+      w: 110,
+    },
+    {
+      id: "monitor-25",
+      inch: 25,
+      merek: 'LG 25UM58 (25")',
+      beratKg: 4.8,
+      watt: 28,
+      w: 120,
+    },
+  ].map(({ id, inch, merek, beratKg, watt, w }) => ({
+    id,
+    kategori: "Perangkat Kantor",
+    nama: `Monitor ${inch} inci`,
+    merek,
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg,
+    watt,
+    color: "#64748b",
+    desc: `Monitor LED ${inch} inci untuk konsol/administrasi. Dihitung 1U untuk perencanaan.`,
+    tags: ["monitor", "layar", "display", `${inch}`, "perangkat kantor"],
+    ilustrasi: `<svg viewBox="0 0 200 52" xmlns="http://www.w3.org/2000/svg">
+      <rect x="${100 - w / 2}" y="2" width="${w}" height="36" rx="3" fill="#111" stroke="#64748b" stroke-width="1.5"/>
+      <rect x="${100 - w / 2 + 4}" y="6" width="${w - 8}" height="28" rx="1" fill="#0f2a44"/>
+      <text x="100" y="24" text-anchor="middle" fill="#93c5fd" font-size="8" font-family="monospace" font-weight="700">${inch}"</text>
+      <rect x="94" y="38" width="12" height="8" fill="#475569"/>
+      <rect x="80" y="46" width="40" height="4" rx="2" fill="#475569"/>
+    </svg>`,
+  })),
+  // ── Printer ──
+  {
+    id: "printer-laser",
+    kategori: "Perangkat Kantor",
+    nama: "Printer Laser",
+    merek: "HP LaserJet Pro M404dn",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 11.0,
+    watt: 480,
+    color: "#475569",
+    desc: "Printer laser monokrom jaringan (LAN, duplex). Dihitung 1U untuk perencanaan.",
+    tags: ["printer", "cetak", "perangkat kantor"],
+    ilustrasi: `<svg viewBox="0 0 200 52" xmlns="http://www.w3.org/2000/svg">
+      <rect x="50" y="4" width="100" height="14" rx="2" fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.2"/>
+      <rect x="40" y="18" width="120" height="26" rx="4" fill="#475569" stroke="#334155" stroke-width="1.2"/>
+      <rect x="56" y="34" width="88" height="10" rx="1" fill="#f8fafc" stroke="#94a3b8"/>
+      <rect x="48" y="23" width="24" height="6" rx="1" fill="#0f172a"/>
+      <circle cx="148" cy="26" r="2.5" fill="#2a9d5c"/>
+    </svg>`,
+  },
+  // ── Keyboard ──
+  {
+    id: "keyboard-usb",
+    kategori: "Perangkat Kantor",
+    nama: "Keyboard",
+    merek: "Logitech K120",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 0.6,
+    watt: 1,
+    color: "#64748b",
+    desc: "Keyboard USB untuk konsol server/administrasi. Dihitung 1U untuk perencanaan.",
+    tags: ["keyboard", "papan ketik", "perangkat kantor"],
+    ilustrasi: `<svg viewBox="0 0 200 40" xmlns="http://www.w3.org/2000/svg">
+      <rect x="20" y="6" width="160" height="28" rx="3" fill="#1e293b" stroke="#64748b" stroke-width="1.2"/>
+      <g fill="#334155" stroke="#64748b" stroke-width="0.5">
+        ${[0, 1, 2].map((r) => Array.from({ length: 12 }, (_, c) => `<rect x="${26 + c * 12.5}" y="${10 + r * 7}" width="10" height="5" rx="1"/>`).join("")).join("")}
+      </g>
+      <rect x="56" y="31" width="88" height="2.5" rx="1" fill="#334155"/>
+    </svg>`,
+  },
 ];
+
+// ─── Item tambahan untuk meja kerja ──────────────────────────────────
+// Dihitung 1U kalau dimasukkan ke rak (perencanaan), tapi dipakai utamanya di mode meja.
+const svgBox = (
+  w,
+  h,
+  fill,
+  stroke,
+  label,
+) => `<svg viewBox="0 0 200 ${h}" xmlns="http://www.w3.org/2000/svg">
+      <rect x="${100 - w / 2}" y="2" width="${w}" height="${h - 4}" rx="5" fill="${fill}" stroke="${stroke}" stroke-width="1.5"/>
+      <text x="100" y="${h / 2 + 3}" text-anchor="middle" fill="${stroke}" font-size="9" font-family="monospace" font-weight="700">${label}</text>
+    </svg>`;
+
+HARDWARE_CATALOG.push(
+  {
+    id: "pc-tower",
+    kategori: "Perangkat Kantor",
+    nama: "PC Tower",
+    merek: "Mid-tower ATX (kaca samping)",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 9.0,
+    watt: 350,
+    color: "#7c3aed",
+    desc: "PC desktop mid-tower ATX. Biasanya ditaruh di sisi meja atau di bawah meja.",
+    tags: ["pc", "komputer", "tower", "cpu", "perangkat kantor"],
+    ilustrasi: svgBox(60, 56, "#1e1b2e", "#a78bfa", "PC"),
+  },
+  {
+    id: "laptop",
+    kategori: "Perangkat Kantor",
+    nama: "Laptop 14 inci",
+    merek: 'Ultrabook 14"',
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 1.4,
+    watt: 65,
+    color: "#475569",
+    desc: "Laptop 14 inci untuk kerja. Dipakai sendiri atau bersama monitor eksternal.",
+    tags: ["laptop", "notebook", "komputer", "perangkat kantor"],
+    ilustrasi: svgBox(90, 44, "#e2e8f0", "#475569", "LAPTOP"),
+  },
+  {
+    id: "mouse",
+    kategori: "Perangkat Kantor",
+    nama: "Mouse",
+    merek: "Logitech M185",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 0.1,
+    watt: 1,
+    color: "#64748b",
+    desc: "Mouse nirkabel/USB. Ditaruh di sebelah keyboard.",
+    tags: ["mouse", "perangkat kantor"],
+    ilustrasi: svgBox(28, 44, "#1e293b", "#94a3b8", "MOUSE"),
+  },
+  {
+    id: "speaker",
+    kategori: "Perangkat Kantor",
+    nama: "Speaker",
+    merek: "Logitech Z120 (satuan)",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 1.0,
+    watt: 5,
+    color: "#334155",
+    desc: "Speaker desktop satuan. Pasang sepasang di kiri dan kanan monitor.",
+    tags: ["speaker", "audio", "perangkat kantor"],
+    ilustrasi: svgBox(40, 52, "#1f2937", "#9ca3af", "SPK"),
+  },
+  {
+    id: "lampu-meja",
+    kategori: "Perangkat Kantor",
+    nama: "Lampu Meja",
+    merek: "LED desk lamp",
+    unitHeight: 1,
+    tipe: "mgmt",
+    beratKg: 0.8,
+    watt: 8,
+    color: "#eab308",
+    desc: "Lampu meja LED untuk pencahayaan area kerja.",
+    tags: ["lampu", "penerangan", "perangkat kantor"],
+    ilustrasi: svgBox(36, 48, "#fef9c3", "#ca8a04", "LAMP"),
+  },
+);
+
+// ─── Ukuran fisik untuk mode meja (cm) ───────────────────────────────
+// zone: back (baris belakang, tengah), front (depan, dekat pengguna), left, right,
+//       flank (mengapit monitor), stack (hardware rak, ditumpuk), free (sudut kosong).
+// Tiap item punya dimCm {w,d,h} dan deskZone. Hardware rak: lebar 48 cm (19").
+const DESK_SPEC = {
+  "patch-panel-24": { dimCm: { w: 48, d: 10, h: 4.5 }, deskZone: "stack" },
+  "cable-manager-1u": { dimCm: { w: 48, d: 8, h: 4.5 }, deskZone: "stack" },
+  "mikrotik-rb": { dimCm: { w: 48, d: 25, h: 4.5 }, deskZone: "stack" },
+  "cisco-switch-24": { dimCm: { w: 48, d: 38, h: 4.5 }, deskZone: "stack" },
+  "tplink-switch-24": { dimCm: { w: 48, d: 30, h: 4.5 }, deskZone: "stack" },
+  "fortinet-fw": { dimCm: { w: 48, d: 22, h: 4.5 }, deskZone: "stack" },
+  "server-1u-dell": { dimCm: { w: 48, d: 43, h: 4.5 }, deskZone: "stack" },
+  "server-2u-hpe": { dimCm: { w: 48, d: 70, h: 8.9 }, deskZone: "stack" },
+  "nas-synology": { dimCm: { w: 48, d: 50, h: 8.9 }, deskZone: "stack" },
+  "ups-apc-2u": { dimCm: { w: 48, d: 60, h: 8.9 }, deskZone: "stack" },
+  "pdu-rack-1u": { dimCm: { w: 48, d: 6, h: 4.5 }, deskZone: "stack" },
+  "kvm-aten-1u": { dimCm: { w: 48, d: 30, h: 4.5 }, deskZone: "stack" },
+  "sensor-suhu": { dimCm: { w: 8, d: 6, h: 4 }, deskZone: "free" },
+  "blanking-1u": { dimCm: { w: 48, d: 2, h: 4.5 }, deskZone: "stack" },
+  "olt-gpon-8": { dimCm: { w: 48, d: 28, h: 4.5 }, deskZone: "stack" },
+  "odf-24": { dimCm: { w: 48, d: 30, h: 4.5 }, deskZone: "stack" },
+  "odc-96": { dimCm: { w: 40, d: 25, h: 60 }, deskZone: "right" },
+  "odp-8": { dimCm: { w: 30, d: 10, h: 20 }, deskZone: "right" },
+  "odp-16": { dimCm: { w: 36, d: 10, h: 24 }, deskZone: "right" },
+  "splitter-plc-18": { dimCm: { w: 20, d: 10, h: 4 }, deskZone: "free" },
+  "closure-48": { dimCm: { w: 40, d: 15, h: 15 }, deskZone: "right" },
+  "ont-gpon-4": { dimCm: { w: 20, d: 15, h: 4 }, deskZone: "right" },
+  "monitor-15": { dimCm: { w: 35, d: 18, h: 32 }, deskZone: "back" },
+  "monitor-24": { dimCm: { w: 54, d: 20, h: 42 }, deskZone: "back" },
+  "monitor-25": { dimCm: { w: 57, d: 21, h: 44 }, deskZone: "back" },
+  "printer-laser": { dimCm: { w: 38, d: 36, h: 25 }, deskZone: "right" },
+  "keyboard-usb": { dimCm: { w: 44, d: 14, h: 2.5 }, deskZone: "front" },
+  "pc-tower": { dimCm: { w: 21, d: 45, h: 45 }, deskZone: "left" },
+  laptop: { dimCm: { w: 32, d: 22, h: 2 }, deskZone: "front" },
+  mouse: { dimCm: { w: 7, d: 11, h: 4 }, deskZone: "front" },
+  speaker: { dimCm: { w: 12, d: 14, h: 22 }, deskZone: "flank" },
+  "lampu-meja": { dimCm: { w: 18, d: 18, h: 40 }, deskZone: "free" },
+};
+for (const h of HARDWARE_CATALOG) Object.assign(h, DESK_SPEC[h.id]);
 
 // ─── Cari hardware (dipakai kolom search Rakit Rak) ────────────────────
 /** Filter katalog berdasarkan nama, merek, deskripsi, kategori, atau tag. */
 export function filterHardware(query) {
-  const q = String(query ?? "").trim().toLowerCase();
+  const q = String(query ?? "")
+    .trim()
+    .toLowerCase();
   if (!q) return [...HARDWARE_CATALOG];
   return HARDWARE_CATALOG.filter((h) =>
     [h.nama, h.merek, h.desc, h.kategori, (h.tags ?? []).join(" ")]
@@ -808,7 +1024,9 @@ export function evaluateLayout(rackU, slotsIn) {
   const hasSwitch = units.some((u) => u.tags?.includes("switch"));
   const hasPDU = units.some((u) => u.tags?.includes("pdu"));
   const hasUPS = units.some((u) => u.tags?.includes("ups"));
-  const hasPatch = units.some((u) => u.id?.includes("patch") || u.tags?.includes("odf"));
+  const hasPatch = units.some(
+    (u) => u.id?.includes("patch") || u.tags?.includes("odf"),
+  );
   const hasOlt = units.some((u) => u.tags?.includes("olt"));
   const hasOdf = units.some((u) => u.tags?.includes("odf"));
   const hasFiber = units.some((u) => u.tags?.includes("fiber"));
@@ -847,7 +1065,9 @@ export function evaluateLayout(rackU, slotsIn) {
     tips.push("Tambah ODF untuk terminasi serat dan splice tray dari OLT.");
   }
   if (hasFiber) {
-    tips.push("Kabel fiber: jaga radius tekuk ≥ 30 mm dan pasang dust cap di port yang tidak terpakai.");
+    tips.push(
+      "Kabel fiber: jaga radius tekuk ≥ 30 mm dan pasang dust cap di port yang tidak terpakai.",
+    );
   }
   if (usedU > rackU) {
     score -= 30;

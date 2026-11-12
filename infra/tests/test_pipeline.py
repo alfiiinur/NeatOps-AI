@@ -3,9 +3,9 @@ import io
 import pytest
 from PIL import Image
 
-from app.geometry import Detection
-from app.pipeline import analyze_rack
-from app.rack import PANEL_MM, U_MM
+from app.common.geometry import Detection
+from app.workflows.pipeline import analyze_rack
+from app.vision.rack import PANEL_MM, U_MM
 
 U = 0.8 * (U_MM / PANEL_MM)  # 1U ternormalisasi untuk panel 0.8 pada gambar persegi
 
@@ -21,9 +21,11 @@ class ScriptedMeta:
 
     def __init__(self, first, crops=()):
         self.first, self.crops, self.calls = first, list(crops), 0
+        self.concept_lists = []
 
     async def segment_many(self, image_bytes, concepts, prepared=None):
         self.calls += 1
+        self.concept_lists.append(list(concepts))
         self.sizes = getattr(self, "sizes", []) + [Image.open(io.BytesIO(image_bytes)).size]
         found = self.first if self.calls == 1 else (self.crops.pop(0) if self.crops else {})
         return {c: found.get(c, []) for c in concepts}
@@ -39,7 +41,7 @@ async def test_gap_retry_finds_missed_unit_and_assigns_u_positions():
         "UPS": [det("UPS", 0.1, 0.1 + 4 * U, 0.8, U)],  # slot 4 (paling bawah)
     }
     # Crop celah: region mulai 0.5U di atas celah, tinggi 4U. Slot tengah ada di rel y=0.375, h=0.25.
-    crop_hit = {"rack server": [det("rack server", 0.05, 0.375, 0.9, 0.25)]}
+    crop_hit = {"equipment": [det("equipment", 0.05, 0.375, 0.9, 0.25)]}
     meta = ScriptedMeta(first, [crop_hit])
 
     r = await analyze_rack(meta, square_jpeg(), identify=False)
@@ -74,7 +76,7 @@ async def test_narrow_object_found_in_gap_is_ignored():
         "network switch": [det("network switch", 0.1, 0.1, 0.8, U)],
         "UPS": [det("UPS", 0.1, 0.1 + 4 * U, 0.8, U)],
     }
-    crop_noise = {"patch panel": [det("patch panel", 0.0, 0.3, 0.1, 0.3)]}  # sangat sempit
+    crop_noise = {"equipment": [det("equipment", 0.0, 0.3, 0.1, 0.3)]}  # sangat sempit
     r = await analyze_rack(ScriptedMeta(first, [crop_noise]), square_jpeg(), identify=False)
     assert len(r.units) == 2
     assert r.empty_slots  # celah tetap dilaporkan kosong
@@ -124,3 +126,29 @@ async def test_gap_crop_is_full_image_width_so_wide_devices_are_not_cut():
     grid_u = 0.2 * (U_MM / PANEL_MM)
     assert crop_h / crop_w == pytest.approx(3 * U + grid_u, rel=0.05)
     assert full_w == full_h
+
+
+async def test_gap_retry_uses_only_generic_prompts():
+    first = {
+        "network switch": [det("network switch", 0.1, 0.1, 0.8, U)],
+        "UPS": [det("UPS", 0.1, 0.1 + 4 * U, 0.8, U)],
+    }
+    meta = ScriptedMeta(first, [{}])
+    r = await analyze_rack(meta, square_jpeg(), identify=False)
+    assert r.retried_gaps == 1
+    assert meta.calls == 2
+    assert meta.concept_lists[1] == ["equipment", "electronic device"]  # <= 2 panggilan SAM untuk satu celah
+
+
+async def test_tiny_gap_is_not_retried_but_still_reported():
+    # Celah ~0,7U (di atas MIN_GAP_U 0,6 tetapi di bawah ambang retry 0,75U): tidak memanggil SAM lagi.
+    grid_u = 0.8 * (U_MM / PANEL_MM)
+    first = {
+        "network switch": [det("network switch", 0.1, 0.1, 0.8, grid_u)],
+        "UPS": [det("UPS", 0.1, 0.1 + 1.7 * grid_u, 0.8, grid_u)],
+    }
+    meta = ScriptedMeta(first)
+    r = await analyze_rack(meta, square_jpeg(), identify=False)
+    assert meta.calls == 1
+    assert r.retried_gaps == 0
+    assert len(r.empty_slots) == 1

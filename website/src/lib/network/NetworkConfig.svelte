@@ -1045,6 +1045,7 @@ write memory`,
         device={activeDevice}
         deviceLabel={currentDevice()?.label ?? activeDevice}
         sections={allSections()}
+        entries={configs[activeDevice] ?? []}
         {activeSection}
         onFilter={(s) => (activeSection = s)}
         onDevice={(id) => { activeDevice = id; activeSection = null; }}

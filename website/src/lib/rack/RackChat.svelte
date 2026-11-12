@@ -1,5 +1,9 @@
 <script>
-  import { tick, untrack } from "svelte";
+  import { onMount, tick, untrack } from "svelte";
+  import { AiChat, plain } from "../shared/aiChat.svelte.js";
+  import ModelNote from "../shared/ModelNote.svelte";
+  import ChatComposer from "../shared/ChatComposer.svelte";
+  import { withAttachmentNote, skippedNote, OFFLINE_ATTACH_TEXT } from "../shared/attachments.js";
 
   // picks = [{ hw, qty }] hardware yang sedang dipilih.
   let {
@@ -56,7 +60,34 @@
     });
   });
 
+  const ai = new AiChat("rack");
+  let attachments = $state([]);
+  onMount(() => ai.init());
+
+  // true bila jawaban lokal menjalankan aksi UI (paket, generate, pindah step).
+  // Aksi harus dijawab lokal supaya teksnya cocok dengan yang terjadi.
+  let acted = false;
+
+  function buildContext() {
+    return {
+      step,
+      hasPhoto,
+      rackU,
+      usedU,
+      picks: picks.map((p) => ({ ...plain(p.hw), qty: p.qty })),
+      result: result
+        ? {
+            ...plain(result),
+            slots: (result.slots ?? []).map(plain),
+            cableShoppingList: (result.cableShoppingList ?? []).map(plain),
+            installSteps: (result.installSteps ?? []).map(plain),
+          }
+        : null,
+    };
+  }
+
   function presetReply(key) {
+    acted = true;
     const summary = onPreset(key);
     return summary ?? "Paket itu belum tersedia.";
   }
@@ -76,6 +107,7 @@
       if (/berapa u|\bu\b|ukuran|tinggi/.test(t))
         return "Patokan umum: 6–12U wall-mount untuk kantor kecil, 24U untuk ruang server menengah, 42U untuk data center. Ukuran pasti bisa diisi di form berikutnya.";
       if (/lewati|skip|lanjut/.test(t)) {
+        acted = true;
         onGoStep(2);
         return "Oke, langsung ke pemilihan hardware.";
       }
@@ -93,6 +125,7 @@
       if (/generate|buat|susun|rakit/.test(t)) {
         if (!picks.length) return "Belum ada hardware yang dipilih. Klik + di katalog atau pakai salah satu paket.";
         if (generating) return "Sedang generate, tunggu sebentar.";
+        acted = true;
         onGenerate();
         return "Oke, saya susun rak dan rencana kabelnya sekarang.";
       }
@@ -102,6 +135,7 @@
     // ── Step 3: tanya hasil ──
     if (!result) return "Belum ada hasil. Generate susunan dulu.";
     if (/edit|ubah|ganti/.test(t)) {
+      acted = true;
       onGoStep(2);
       return "Saya buka lagi form hardware. Generate ulang setelah selesai mengubah.";
     }
@@ -133,12 +167,24 @@
     return "Coba tanya \"jelaskan susunan\", \"lihat 3D\", \"cek daya\", \"kabel apa saja?\", atau \"langkah pertama?\".";
   }
 
-  function send(text) {
-    const q = text.trim();
-    if (!q) return;
+  async function send(text) {
+    const files = attachments;
+    const q = text.trim() || (files.length ? "Jelaskan lampiran ini." : "");
+    if (!q || ai.thinking) return;
+    const history = messages.map((m) => ({ role: m.from === "user" ? "user" : "assistant", content: m.text }));
     input = "";
-    push("user", q);
-    push("bot", reply(q));
+    attachments = [];
+    push("user", withAttachmentNote(q, files));
+    // Tanpa lampiran: jawaban lokal dihitung dulu (menjalankan aksi UI paket/generate/tab) dan jadi cadangan.
+    // Dengan lampiran: langsung ke AI, karena aturan lokal tidak bisa membaca lampiran.
+    let local = OFFLINE_ATTACH_TEXT;
+    if (!files.length) {
+      acted = false;
+      local = reply(q);
+      if (acted) return push("bot", local);
+    }
+    const r = await ai.ask(q, { history, context: buildContext(), files });
+    push("bot", r ? r.answer + skippedNote(r.skipped) : local);
   }
 </script>
 
@@ -149,6 +195,7 @@
       {#each messages as m}
         <div class="msg {m.from}">{m.text}</div>
       {/each}
+      {#if ai.thinking}<div class="msg bot">…</div>{/if}
     </div>
   </div>
   <div class="chat-chips">
@@ -156,10 +203,15 @@
       <button type="button" onclick={() => send(c)}>{c}</button>
     {/each}
   </div>
-  <form class="chat-form" onsubmit={(e) => { e.preventDefault(); send(input); }}>
-    <input bind:value={input} placeholder="Tanya soal rak ini..." aria-label="Pesan untuk asisten AI" />
-    <button type="submit">Kirim</button>
-  </form>
+  <ChatComposer
+    bind:value={input}
+    bind:attachments
+    placeholder="Tanya soal rak ini..."
+    ariaLabel="Pesan untuk asisten AI"
+    busy={ai.thinking}
+    onSubmit={() => send(input)}
+  />
+  <ModelNote {ai} />
 </div>
 
 <style>

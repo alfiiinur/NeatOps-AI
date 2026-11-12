@@ -1,4 +1,4 @@
-from app.detect import (
+from app.vision.detect import (
     CLASS_BY_PROMPT,
     Unit,
     clean_units,
@@ -59,7 +59,7 @@ def test_clean_units_filters_low_confidence_and_sorts_top_to_bottom():
 
 # ─── Perilaku baru dari uji foto nyata ─────────────────────────────────────
 
-from app.detect import drop_outside_column  # noqa: E402
+from app.vision.detect import drop_outside_column  # noqa: E402
 
 PDU = CLASS_BY_PROMPT["PDU power strip"]
 GENERIC = CLASS_BY_PROMPT["equipment"]
@@ -109,3 +109,100 @@ def test_generic_prompt_loses_to_specific_class_on_same_object():
     generic = Unit(GENERIC, A_BOX := (0.1, 0.1, 0.8, 0.1), 0.95)
     specific = Unit(SWITCH, A_BOX, 0.6)
     assert dedupe([generic, specific]) == [specific]
+
+
+# ─── Dedup kontainmen (duplikat Pakscan, kotak bersarang) ──────────────────
+
+from app.vision.detect import drop_contained_duplicates, drop_nested  # noqa: E402
+
+
+def test_near_duplicate_inside_larger_box_is_dropped_even_with_low_iou():
+    big = Unit(GENERIC, (0.1, 0.1, 0.6, 0.2), 0.9)
+    dup = Unit(GENERIC, (0.12, 0.12, 0.5, 0.16), 0.7)  # di dalam big, luas 67% -> objek yang sama
+    assert iou(big.bbox, dup.bbox) < 0.8
+    assert drop_contained_duplicates([big, dup]) == [big]
+    assert clean_units([dup, big]) == [big]
+
+
+def test_contained_duplicate_keeps_the_higher_ranked_box():
+    big = Unit(GENERIC, (0.1, 0.1, 0.6, 0.2), 0.5)
+    inner = Unit(SWITCH, (0.12, 0.12, 0.5, 0.16), 0.9)  # kelas spesifik menang walau lebih kecil
+    assert drop_contained_duplicates([big, inner]) == [inner]
+
+
+def test_small_contained_box_is_not_a_duplicate():
+    big = Unit(GENERIC, (0.1, 0.1, 0.6, 0.2), 0.9)
+    small = Unit(GENERIC, (0.15, 0.12, 0.1, 0.05), 0.8)  # luas ~4% -> bukan duplikat
+    assert len(drop_contained_duplicates([big, small])) == 2
+
+
+def test_adjacent_units_are_not_duplicates():
+    a, b = u(SWITCH, 0.10, 0.05), u(SERVER, 0.15, 0.05)
+    assert drop_contained_duplicates([a, b]) == [a, b]
+
+
+def test_modules_inside_wrapper_are_left_to_aggregate_rule():
+    wrapper = Unit(GENERIC, (0.18, 0.22, 0.55, 0.15), 0.9)
+    modules = [Unit(GENERIC, (0.18 + i * 0.275, 0.22, 0.27, 0.15), 0.8) for i in range(2)]  # 2 modul ~49% luas
+    assert len(drop_contained_duplicates([wrapper, *modules])) == 3
+    assert drop_aggregate_boxes([wrapper, *modules]) == [wrapper]
+
+
+def test_single_nested_small_box_is_dropped():
+    device = Unit(SWITCH, (0.1, 0.1, 0.6, 0.2), 0.9)
+    nested = Unit(GENERIC, (0.2, 0.15, 0.1, 0.05), 0.6)
+    assert drop_nested([device, nested]) == [device]
+
+
+def test_device_on_shelf_is_kept_when_wrapper_is_protected():
+    shelf = Unit(GENERIC, (0.1, 0.1, 0.6, 0.2), 0.9)
+    on_shelf = Unit(GENERIC, (0.2, 0.15, 0.1, 0.05), 0.6)
+    assert drop_nested([shelf, on_shelf], protect=lambda b: b is shelf) == [shelf, on_shelf]
+
+
+def test_nested_more_confident_than_wrapper_is_kept():
+    device = Unit(SWITCH, (0.1, 0.1, 0.6, 0.2), 0.5)
+    nested = Unit(GENERIC, (0.2, 0.15, 0.1, 0.05), 0.9)
+    assert len(drop_nested([device, nested])) == 2
+
+
+def test_wrapper_with_several_children_is_not_touched_by_nested_rule():
+    wrapper = Unit(GENERIC, (0.1, 0.1, 0.6, 0.2), 0.9)
+    kids = [Unit(GENERIC, (0.12 + i * 0.15, 0.15, 0.1, 0.05), 0.6) for i in range(3)]
+    assert len(drop_nested([wrapper, *kids])) == 4
+
+
+# ─── Fragmen menempel (modul samping controller yang terdeteksi dua kali) ────
+
+from app.vision.detect import drop_attached_fragments  # noqa: E402
+from app.vision.identify import Identification  # noqa: E402
+
+
+def with_ident(unit, **kw):
+    unit.ident = Identification(**kw)
+    return unit
+
+
+def test_anonymous_generic_strip_beside_a_device_is_dropped():
+    host = with_ident(Unit(GENERIC, (0.575, 0.22, 0.155, 0.15), 0.94), nama="Controller", merek="Rotork")
+    strip = with_ident(Unit(GENERIC, (0.528, 0.22, 0.049, 0.145), 0.91), nama="Perangkat")
+    assert drop_attached_fragments([host, strip]) == [host]
+
+
+def test_branded_neighbour_is_kept():
+    a = with_ident(Unit(SWITCH, (0.1, 0.2, 0.3, 0.1), 0.9), merek="TP-Link")
+    b = with_ident(Unit(GENERIC, (0.41, 0.2, 0.05, 0.1), 0.9), merek="Netgear")
+    assert len(drop_attached_fragments([a, b])) == 2
+
+
+def test_far_or_different_row_neighbour_is_kept():
+    host = with_ident(Unit(GENERIC, (0.5, 0.2, 0.3, 0.1), 0.9), nama="X")
+    far = with_ident(Unit(GENERIC, (0.1, 0.2, 0.05, 0.1), 0.9), nama="Perangkat")  # jauh di kiri
+    other_row = with_ident(Unit(GENERIC, (0.45, 0.5, 0.05, 0.1), 0.9), nama="Perangkat")  # baris lain
+    assert len(drop_attached_fragments([host, far, other_row])) == 3
+
+
+def test_unidentified_unit_is_never_dropped_without_ident():
+    host = Unit(GENERIC, (0.575, 0.22, 0.155, 0.15), 0.94)
+    strip = Unit(GENERIC, (0.528, 0.22, 0.049, 0.145), 0.91)  # belum diidentifikasi -> jangan disentuh
+    assert len(drop_attached_fragments([host, strip])) == 2

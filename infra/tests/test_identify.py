@@ -4,10 +4,10 @@ from types import SimpleNamespace
 
 from PIL import Image
 
-from app.config import Settings
-from app.detect import CLASS_BY_PROMPT, Unit
-from app.identify import Identification, identify_units
-from app.meta_client import MetaClient
+from app.core.config import Settings
+from app.vision.detect import CLASS_BY_PROMPT, Unit
+from app.vision.identify import Identification, identify_units
+from app.clients.meta_client import MetaClient
 
 SWITCH = CLASS_BY_PROMPT["network switch"]
 
@@ -122,7 +122,7 @@ def test_confidence_is_clamped():
 
 # ─── Verifikasi slot kosong ────────────────────────────────────────────────
 
-from app.identify import classify_slots  # noqa: E402
+from app.vision.identify import classify_slots  # noqa: E402
 
 
 def slots():
@@ -159,3 +159,24 @@ async def test_identification_name_field_is_parsed():
     u = unit()
     await identify_units(mc, jpeg(), [u], [])
     assert u.ident.nama == "Switch 24-port"
+
+
+async def test_classify_slots_skips_slots_below_min_height_without_calling_model():
+    mc, chat = make_client([{"isi": "kosong", "catatan": ""}])
+    s = [
+        {"u_start": 1, "u_end": 1, "bbox": [0.1, 0.1, 0.8, 0.02]},  # lebih rendah dari min_height
+        {"u_start": 2, "u_end": 3, "bbox": [0.1, 0.3, 0.8, 0.15]},
+    ]
+    await classify_slots(mc, jpeg(), s, min_height=0.05)
+    assert [x["status"] for x in s] == ["tidak_jelas", "kosong"]
+    assert len(chat.calls) == 1
+
+
+def test_is_shelf_like_reads_muse_name():
+    from app.vision.identify import is_shelf_like
+
+    shelf = Unit(CLASS_BY_PROMPT["equipment"], (0, 0, 1, 1), 0.9)
+    shelf.ident = Identification(nama="Rak Shelf")
+    plain = Unit(CLASS_BY_PROMPT["equipment"], (0, 0, 1, 1), 0.9)
+    plain.ident = Identification(nama="UPS")
+    assert is_shelf_like(shelf) and not is_shelf_like(plain) and not is_shelf_like(Unit(SWITCH, (0, 0, 1, 1), 0.9))
