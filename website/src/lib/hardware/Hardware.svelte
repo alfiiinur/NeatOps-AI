@@ -1,4 +1,6 @@
 <script>
+  import Model3DViewer from "./Model3DViewer.svelte";
+
   // SVG ilustrasi per perangkat — inline, digambar sesuai bentuk asli
   const hwIllustrations = {
     "Dell PowerEdge R250": `<svg viewBox="0 0 320 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
@@ -1010,6 +1012,15 @@
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 9h16M4 15h16M10 3L8 21M16 3l-2 18"/></svg>
         Kabel & Koneksi
       </button>
+      <button
+        role="tab"
+        class:active={activeSection === "model3d"}
+        aria-selected={activeSection === "model3d"}
+        onclick={() => (activeSection = "model3d")}
+      >
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 16V8l-9-5-9 5v8l9 5 9-5z"/><path d="M3.3 7L12 12l8.7-5M12 22V12"/></svg>
+        Model 3D
+      </button>
     </div>
   </div>
 
@@ -1053,6 +1064,11 @@
         </div>
       </section>
     {/each}
+  {:else if activeSection === "model3d"}
+    <section class="hw-section">
+      <h2 class="hw-section-title">Model 3D Perangkat</h2>
+      <Model3DViewer />
+    </section>
   {:else}
     {#each kabelList as group}
       <section class="hw-section">

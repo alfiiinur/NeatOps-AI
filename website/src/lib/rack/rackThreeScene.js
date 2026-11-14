@@ -325,6 +325,7 @@ export function createRackScene(canvas, opts) {
       group,
       frontMat: mats.front,
       baseColor: slot.color || "#666666",
+      mats: [mats.side, mats.topm, mats.dark, mats.front],
       yCur: item.yCenter,
       zCur: 0,
       height: item.height,
@@ -375,6 +376,7 @@ export function createRackScene(canvas, opts) {
         }),
       );
       chan.position.set(c.x, H / 2, UNIT_D / 2 - 0.6);
+      chan.userData.chan = true;
       cablesGroup.add(chan);
     }
     let di = 0;
@@ -416,6 +418,7 @@ export function createRackScene(canvas, opts) {
           metalness: 0.05,
         }),
       );
+      tube.userData.key = s.key;
       cablesGroup.add(tube);
     }
     cablesGroup.visible = showCables;
@@ -576,6 +579,171 @@ export function createRackScene(canvas, opts) {
       if (selectedKey === key) selectedKey = null;
     }
     buildCables();
+    if (installState) applyInstall();
+  }
+
+  // ── Mode animasi instalasi (dikendalikan InstallStage3D lewat setInstall) ──
+  // `view` = hasil stateAt() dari installTimeline.js; scene hanya menerjemahkannya ke posisi/opacity/emissive.
+  const SLIDE_DIST = 9;
+  let installState = null; // { view, routes }
+
+  function ensureHardware(entry) {
+    if (entry.hw) return entry.hw;
+    const h = Math.max(entry.height - GAP, 0.2);
+    const grp = new THREE.Group();
+    const ledMat = new THREE.MeshStandardMaterial({
+      color: 0x1d2a1d,
+      emissive: 0x4ade80,
+      emissiveIntensity: 0,
+      roughness: 0.4,
+    });
+    const led = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.14, 0.06), ledMat);
+    led.position.set(UNIT_W / 2 - 0.55, 0, UNIT_D / 2 + 0.04);
+    grp.add(led);
+    const screwMat = new THREE.MeshStandardMaterial({
+      color: 0x8a8a80,
+      emissive: 0xb7e03a,
+      emissiveIntensity: 0,
+      roughness: 0.4,
+      metalness: 0.7,
+    });
+    const geo = new THREE.CylinderGeometry(0.09, 0.09, 0.06, 10);
+    geo.rotateX(Math.PI / 2);
+    const screws = [];
+    for (const sx of [-1, 1]) {
+      for (const sy of [-1, 1]) {
+        const m = new THREE.Mesh(geo, screwMat);
+        m.position.set(
+          sx * (UNIT_W / 2 + 0.02),
+          sy * Math.max(h / 2 - 0.12, 0.05),
+          UNIT_D / 2 + 0.17,
+        );
+        grp.add(m);
+        screws.push(m);
+      }
+    }
+    entry.group.add(grp);
+    entry.hw = { grp, led, ledMat, screws, screwMat };
+    return entry.hw;
+  }
+
+  function applyInstall() {
+    const { view, routes } = installState;
+    const slotByKey = new Map(slots.map((s) => [s.key, s]));
+    if (cabinet) {
+      cabinet.visible = view.rail > 0.001;
+      cabinet.scale.y = Math.max(view.rail, 0.001);
+    }
+    const routeP = new Map();
+    let anyCable = 0;
+    routes.forEach((r, i) => {
+      const p = view.cables[i] ?? 0;
+      anyCable = Math.max(anyCable, p);
+      for (const k of [r.fromKey, r.toKey])
+        if (k) routeP.set(k, Math.max(routeP.get(k) ?? 0, p));
+    });
+    for (const [key, entry] of units) {
+      const u = view.units[key];
+      const slot = slotByKey.get(key);
+      if (!u || !slot) continue;
+      const s = u.slide;
+      entry.group.visible = s > 0.001;
+      entry.group.position.z = slot.auto ? 0 : (1 - s) * SLIDE_DIST;
+      entry.group.position.y = entry.yCur + (slot.auto ? (1 - s) * 3 : 0);
+      const op = Math.min(1, s * 3);
+      for (const m of entry.mats) {
+        const tr = op < 0.999;
+        if (m.transparent !== tr) {
+          m.transparent = tr;
+          m.needsUpdate = true;
+        }
+        m.opacity = op;
+      }
+      if (slot.auto) continue;
+      const hw = ensureHardware(entry);
+      hw.grp.visible = true;
+      hw.ledMat.color.setHex(0x1d2a1d).lerp(new THREE.Color(0x4ade80), u.led);
+      hw.ledMat.emissiveIntensity = u.led * 2.4;
+      const tight = u.screws >= 0.999;
+      const turning = u.screws > 0 && !tight;
+      hw.screwMat.color.setHex(tight ? 0xdcdcd0 : 0x8a8a80);
+      hw.screwMat.emissiveIntensity = turning
+        ? 0.5 + 0.5 * Math.abs(Math.sin(u.screws * Math.PI * 4))
+        : 0;
+      for (const sc of hw.screws) sc.rotation.z = u.screws * Math.PI * 6;
+    }
+    if (cablesGroup) {
+      for (const o of cablesGroup.children) {
+        if (o.userData.chan) {
+          o.visible = anyCable > 0.001;
+          o.scale.y = Math.max(anyCable, 0.001);
+        } else if (o.userData.key) {
+          const k = o.userData.key;
+          const placed = (view.units[k]?.slide ?? 0) >= 0.999;
+          // Tanpa rute eksplisit, kabel dekoratif muncul bersama LED unit (saat dihidupkan).
+          const p = placed
+            ? routeP.has(k)
+              ? routeP.get(k)
+              : (view.units[k]?.led ?? 0)
+            : 0;
+          o.visible = p > 0.001;
+          const count = o.geometry.index
+            ? o.geometry.index.count
+            : o.geometry.attributes.position.count;
+          o.geometry.setDrawRange(0, Math.floor((count * p) / 3) * 3);
+        }
+      }
+    }
+  }
+
+  function resetInstall() {
+    installState = null;
+    if (cabinet) {
+      cabinet.visible = true;
+      cabinet.scale.y = 1;
+    }
+    for (const entry of units.values()) {
+      entry.group.visible = true;
+      entry.group.position.z = entry.zCur;
+      entry.group.position.y = entry.yCur;
+      for (const m of entry.mats) {
+        m.transparent = false;
+        m.opacity = 1;
+        m.needsUpdate = true;
+      }
+      if (entry.hw) entry.hw.grp.visible = false;
+    }
+    if (cablesGroup) {
+      for (const o of cablesGroup.children) {
+        o.visible = true;
+        if (o.userData.chan) o.scale.y = 1;
+        else o.geometry.setDrawRange(0, Infinity);
+      }
+    }
+  }
+
+  function setInstall(view, routes = []) {
+    if (!view) return resetInstall();
+    installState = { view, routes };
+    applyInstall();
+  }
+
+  /** Arahkan kamera ke sebuah unit tanpa menariknya keluar (beda dengan focusUnit). */
+  function frameUnit(key, dur = 800) {
+    const entry = units.get(key);
+    if (!entry) return;
+    const dir = camera.position.clone().sub(controls.target);
+    if (dir.lengthSq() < 1e-6) dir.set(0.5, 0.35, 0.75);
+    dir.normalize();
+    const tanV = Math.tan((camera.fov * Math.PI) / 360);
+    const distW = (UNIT_W * 2.2) / 2 / (tanV * Math.max(camera.aspect, 0.3));
+    const dist = Math.min(Math.max(distW, 12), baseDist * 1.3);
+    const target = new THREE.Vector3(0, entry.yCur, 0);
+    tweenCam(
+      target.clone().addScaledVector(dir, dist).toArray(),
+      target.toArray(),
+      dur,
+    );
   }
 
   function setView(name) {
@@ -721,6 +889,8 @@ export function createRackScene(canvas, opts) {
     },
     setView,
     reset,
+    setInstall,
+    frameUnit,
     focusUnit,
     clearSelection,
     setSelected,
