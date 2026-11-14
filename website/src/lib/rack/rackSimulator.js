@@ -1155,6 +1155,9 @@ function buildCableRoutes(slots) {
       label: `Patch Panel (U${patchSlot.uStart}) → Switch (U${switchSlots[0].uStart})`,
       kabel: "Cat6A patch cord pendek (0.5–1m)",
       jalur: "Kabel manager horizontal di antara patch panel dan switch",
+      lane: "data",
+      fromKey: patchSlot.key,
+      toKey: switchSlots[0].key,
     });
   }
   if (switchSlots.length && serverSlots.length) {
@@ -1164,6 +1167,9 @@ function buildCableRoutes(slots) {
       label: `Switch (U${switchSlots[0].uStart}) → Server (U${serverSlots[0].uStart})`,
       kabel: "Cat6A patch cord 1–2m (1 kabel per server NIC)",
       jalur: "Jalur kanan panel, bundel dengan velcro per 3 kabel",
+      lane: "data",
+      fromKey: switchSlots[0].key,
+      toKey: serverSlots[0].key,
     });
   }
   const oltSlot = slots.find((s) => s.tags?.includes("olt"));
@@ -1176,6 +1182,9 @@ function buildCableRoutes(slots) {
       label: `OLT (U${oltSlot.uStart}) → ODF (U${odfSlot.uStart})`,
       kabel: "Patchcord SC-SC OS2 kuning 2m",
       jalur: "Jalur kanan atas, radius tekuk ≥ 30 mm, jangan dilipat tajam",
+      lane: "data",
+      fromKey: oltSlot.key,
+      toKey: odfSlot.key,
     });
   }
   if (odfSlot && odpSlots.length) {
@@ -1185,6 +1194,9 @@ function buildCableRoutes(slots) {
       label: `ODF (U${odfSlot.uStart}) → ODP (${odpSlots.length} unit)`,
       kabel: "Kabel distribusi + pigtail SC dari splice tray ODF",
       jalur: "Keluar rak via gland plate atas menuju tiang/dinding",
+      lane: "data",
+      fromKey: odfSlot.key,
+      toKey: odpSlots[0].key,
     });
   }
   if (pduSlot && serverSlots.length) {
@@ -1194,6 +1206,9 @@ function buildCableRoutes(slots) {
       label: `PDU (U${pduSlot.uStart}) → Server (power)`,
       kabel: "IEC C13→C14 power cord 2m",
       jalur: "Jalur kiri panel, pisahkan dari kabel data",
+      lane: "power",
+      fromKey: pduSlot.key,
+      toKey: serverSlots[0].key,
     });
   }
   if (upsSlot && pduSlot) {
@@ -1203,6 +1218,9 @@ function buildCableRoutes(slots) {
       label: `UPS (U${upsSlot.uStart}) → PDU (U${pduSlot.uStart})`,
       kabel: "IEC C19→C20 power cord 2m",
       jalur: "Jalur kiri panel bawah, kabel paling besar — pasang terakhir",
+      lane: "power",
+      fromKey: upsSlot.key,
+      toKey: pduSlot.key,
     });
   }
 
@@ -1304,10 +1322,48 @@ function buildInstallSteps(slots, units, rackU) {
   const hasServer = units.some((u) => u.tipe === "server");
   const hasFo = units.some((u) => u.tags?.includes("fiber"));
 
+  // ── Data aksi untuk animasi (installTimeline.js). Unit dipasang dari bawah ke atas
+  //    (slots berurutan dari atas, jadi dibalik); tiap unit hanya dipasang sekali.
+  const placed = new Set();
+  const bottomUp = (list) => [...list].reverse();
+  const place = (list) => {
+    const aksi = [];
+    for (const u of bottomUp(list)) {
+      if (placed.has(u.key)) continue;
+      placed.add(u.key);
+      aksi.push(
+        { tipe: "slide-in", slotKey: u.key },
+        { tipe: "screw", slotKey: u.key },
+      );
+    }
+    return aksi;
+  };
+  const isUps = (u) => u.tags?.includes("ups");
+  const isPdu = (u) => u.tags?.includes("pdu");
+  const isFiberGear = (u) =>
+    hasFo &&
+    ["fiber", "olt", "odf", "odp", "closure"].some((t) => u.tags?.includes(t));
+  const upsUnits = units.filter(isUps);
+  const pduUnits = units.filter(
+    (u) => isPdu(u) || (u.tipe === "daya" && !isUps(u)),
+  );
+  const serverUnits = units.filter((u) => u.tipe === "server");
+  const fiberUnits = units.filter(isFiberGear);
+  const powerOrder = (u) =>
+    isUps(u)
+      ? 0
+      : isPdu(u) || u.tipe === "daya"
+        ? 1
+        : u.tipe === "server"
+          ? 3
+          : 2;
+  const ledOrder = [...units].sort((a, b) => powerOrder(a) - powerOrder(b));
+
   steps.push({
     no: 1,
     judul: "Pasang rail & kencangkan rak",
     isi: "Pastikan rak level (pakai waterpas). Pasang rail slide untuk server berat sebelum unit dipasang.",
+    aksi: [{ tipe: "rail" }],
   });
   steps.push({
     no: 2,
@@ -1315,44 +1371,59 @@ function buildInstallSteps(slots, units, rackU) {
     isi: hasUPS
       ? "Pasang UPS di slot terbawah — ini unit terberat. Gunakan minimal 2 orang."
       : "Pasang PDU di slot bawah.",
+    aksi: place(hasUPS ? upsUnits : pduUnits),
   });
   if (hasPDU)
     steps.push({
       no: 3,
       judul: "Pasang PDU rack",
       isi: "Pasang PDU di atas UPS. Sambungkan input PDU ke output UPS (C19→C20), tapi jangan hidupkan dulu.",
+      aksi: place(pduUnits),
     });
   if (hasServer)
     steps.push({
       no: steps.length + 1,
       judul: "Pasang server dari bawah ke atas",
       isi: "Pasang server satu per satu mulai dari U bawah. Sambungkan power cord tapi jangan hidupkan.",
+      aksi: place(serverUnits),
     });
+  // Fiber dipasang di langkah fiber (bila ada); sisanya (switch, patch panel, dll.) di sini.
+  const networkUnits = units.filter(
+    (u) => !placed.has(u.key) && !fiberUnits.includes(u),
+  );
   steps.push({
     no: steps.length + 1,
     judul: "Pasang switch & patch panel",
     isi: "Pasang switch dan patch panel. Hubungkan patch cord dari patch panel ke switch — gunakan panjang minimal.",
+    aksi: place(networkUnits),
   });
   if (hasFo)
     steps.push({
       no: steps.length + 1,
       judul: "Terminasi & splicing fiber optik",
       isi: "Pasang ODF/splitter, splice pigtail ke kabel distribusi, lalu ukur tiap core dengan OPM/OTDR. Target daya terima di atas sensitivitas ONT dengan margin ≥ 3 dB.",
+      aksi: place(fiberUnits),
     });
   steps.push({
     no: steps.length + 1,
     judul: "Rapikan kabel sebelum menghidupkan",
     isi: "Kelompokkan kabel daya (kiri) dan data (kanan). Ikat dengan velcro. Beri label tiap ujung kabel.",
+    aksi: [{ tipe: "cable" }], // diperluas per rute oleh installTimeline.js
   });
   steps.push({
     no: steps.length + 1,
     judul: "Hidupkan berurutan: UPS → PDU → Network → Server",
     isi: "Jangan hidupkan semua sekaligus. Urutan: UPS → PDU → switch/router → server. Verifikasi LED tiap langkah.",
+    aksi: ledOrder.map((u) => ({ tipe: "led", slotKey: u.key })),
   });
   steps.push({
     no: steps.length + 1,
     judul: "Tutup slot kosong dengan blanking panel",
     isi: `Pasang blanking panel di ${Math.max(0, rackU - slots.filter((s) => !s.auto).length)}U kosong untuk manajemen airflow.`,
+    aksi: bottomUp(slots.filter((s) => s.auto)).map((s) => ({
+      tipe: "blank",
+      slotKey: s.key,
+    })),
   });
 
   return steps;

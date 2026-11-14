@@ -5,6 +5,7 @@
   import ProjectBar from "../shared/ProjectBar.svelte";
   import RackChat from "./RackChat.svelte";
   import RackThree from "./RackThree.svelte";
+  import InstallPlayer from "./InstallPlayer.svelte";
   import DeskBuilder from "./DeskBuilder.svelte";
   import { DEFAULT_DESK, clampDesk } from "./deskSimulator.js";
   import {
@@ -930,14 +931,7 @@
                   </section>
                 </div>
               {:else}
-                <ol class="rb-install">
-                  {#each result.installSteps as s}
-                    <li>
-                      <span class="rb-install-num">{s.no}</span>
-                      <div><b>{s.judul}</b><p>{s.isi}</p></div>
-                    </li>
-                  {/each}
-                </ol>
+                <InstallPlayer {result} />
               {/if}
             </div>
           </div>
@@ -1284,16 +1278,4 @@
     background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 12px;
   }
   .rb-principles i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
-
-  .rb-install { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
-  .rb-install li {
-    display: flex; gap: 12px; align-items: flex-start;
-    background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 12px 14px;
-  }
-  .rb-install-num {
-    width: 28px; height: 28px; border-radius: 50%; flex: none; display: grid; place-items: center;
-    background: var(--amber); color: #fff; font-family: var(--mono); font-weight: 700; font-size: 13px;
-  }
-  .rb-install b { font-size: 14px; }
-  .rb-install p { margin: 3px 0 0; font-size: 13px; color: var(--muted); }
 </style>
