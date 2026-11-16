@@ -14,17 +14,41 @@
     qtyFromResult,
   } from "./deskSimulator.js";
   import DeskChat from "./DeskChat.svelte";
+  import ModelThumb from "./ModelThumb.svelte";
   import DeskPlan from "./DeskPlan.svelte";
   import DeskThree from "./DeskThree.svelte";
+  import InstallPlayer from "./InstallPlayer.svelte";
+  import {
+    MAX_DESKS,
+    planDesks,
+    qtyFromDesks,
+    addDesk,
+    removeDesk,
+    resizeDesk,
+    moveItemToDesk,
+    summarizeDesks,
+    keepDeskMeta,
+  } from "./deskMulti.js";
 
   let {
     desk = $bindable(),
     deskName = $bindable(),
     step = $bindable(),
     qty = $bindable(),
-    result = $bindable(),
+    results = $bindable([]),
+    active = $bindable(0),
     chatKey = "",
   } = $props();
+
+  // Multi-meja: tiap meja = hasil evaluateDeskLayout + meta { id, nama, peran }.
+  // `result` = meja yang sedang dibuka, jadi tampilan lama tetap memakai `result`.
+  const result = $derived(results[active] ?? null);
+  const sum = $derived(summarizeDesks(results));
+  let deskNotes = $state([]); // catatan pembagian otomatis
+  let deskMsg = $state(""); // umpan balik tambah/hapus/pindah barang
+  function setResult(r) {
+    results = results.map((x, i) => (i === active ? keepDeskMeta(x, r) : x));
+  }
 
   let resultTab = $state("denah");
   let generating = $state(false);
@@ -69,9 +93,12 @@
   );
   const unitCount = $derived(picks.reduce((s, p) => s + p.qty, 0));
   const preview = $derived(generateDeskLayout(desk, qty));
-  const area = $derived(preview.areaPct);
-  const areaColor = $derived(preview.overlaps.length || preview.outside.length ? "var(--bad)" : area > 70 ? "var(--warn)" : "var(--ok)");
-  const overFull = $derived(preview.overlaps.length > 0 || preview.outside.length > 0);
+  // Pembagian ke beberapa meja bila tidak muat di satu meja.
+  const plan = $derived(planDesks(desk, qty));
+  const deskCount = $derived(Math.max(1, plan.desks.length));
+  const area = $derived(plan.desks.length ? Math.round(plan.desks.reduce((s, d) => s + d.areaPct, 0) / plan.desks.length) : preview.areaPct);
+  const overFull = $derived(deskCount > MAX_DESKS || plan.desks.some((d) => d.overlaps.length > 0 || d.outside.length > 0));
+  const areaColor = $derived(overFull ? "var(--bad)" : area > 70 ? "var(--warn)" : "var(--ok)");
 
   const categories = [...new Set(HARDWARE_CATALOG.map((h) => h.kategori))];
   const searching = $derived(hwSearch.trim().length > 0);
@@ -80,12 +107,18 @@
   const hwByCategory = (cat) => catalogFiltered.filter((h) => h.kategori === cat);
 
   // Cek muat per item (dihitung sekali per perubahan qty/desk, bukan per render baris).
-  const canAdd = $derived(Object.fromEntries(HARDWARE_CATALOG.map((h) => [h.id, (qty[h.id] ?? 0) < 10 && canAddToDesk(desk, qty, h.id)])));
+  // Boleh menambah selama masih muat di satu meja, atau bisa dibagi rapi ke ≤ MAX_DESKS meja.
+  function canPlaceMore(id) {
+    if (canAddToDesk(desk, qty, id)) return true;
+    const p = planDesks(desk, { ...qty, [id]: (qty[id] ?? 0) + 1 });
+    return p.desks.length <= MAX_DESKS && p.desks.every((d) => d.overlaps.length === 0 && d.outside.length === 0);
+  }
+  const canAdd = $derived(Object.fromEntries(HARDWARE_CATALOG.map((h) => [h.id, (qty[h.id] ?? 0) < 10 && canPlaceMore(h.id)])));
 
   function setQty(id, val) {
     const cur = qty[id] ?? 0;
     const req = Math.max(0, Math.min(10, parseInt(val, 10) || 0));
-    if (req > cur && !canAddToDesk(desk, qty, id)) return;
+    if (req > cur && !canPlaceMore(id)) return;
     qty = { ...qty, [id]: req };
   }
   const inc = (id) => setQty(id, (qty[id] ?? 0) + 1);
@@ -139,7 +172,11 @@
       genProgress = (i + 1) / GEN_STEPS.length;
       await new Promise((r) => setTimeout(r, 340));
     }
-    result = generateDeskLayout(desk, qty);
+    const out = planDesks(desk, qty);
+    results = out.desks;
+    deskNotes = out.notes;
+    deskMsg = "";
+    active = 0;
     resultTab = "denah";
     step = 3;
     generating = false;
@@ -156,7 +193,10 @@
     if (generating) return;
     step = 1;
     qty = {};
-    result = null;
+    results = [];
+    active = 0;
+    deskNotes = [];
+    deskMsg = "";
     desk = { w: 160, d: 80 };
     deskName = "Meja Kerja Utama";
     resultTab = "denah";
@@ -164,8 +204,72 @@
 
   function resetLayout() {
     if (!result) return;
-    result = generateDeskLayout(result.desk, qtyFromResult(result));
+    setResult(generateDeskLayout(result.desk, qtyFromResult(result)));
     moveNote = "Penataan dikembalikan ke rekomendasi AI.";
+  }
+
+  // ─── Multi-meja: buka / tambah / hapus / ukuran / pindah barang / susun ulang ──────
+  function openDesk(i) {
+    if (!results[i]) return;
+    active = i;
+    deskMsg = "";
+  }
+
+  function addNewDesk() {
+    const r = addDesk(results);
+    if (!r.ok) {
+      deskMsg = r.reason;
+      return;
+    }
+    results = r.desks;
+    active = r.index;
+    deskMsg = `${results[active].nama} ditambahkan. Pindahkan barang ke sini lewat pilihan "Pindah ke meja" di tab Daftar item.`;
+    moveNote = deskMsg;
+  }
+
+  function deleteDesk(i) {
+    const r = removeDesk(results, i);
+    if (!r.ok) {
+      deskMsg = r.reason;
+      return;
+    }
+    const nama = results[i].nama;
+    results = r.desks;
+    active = Math.min(active, results.length - 1);
+    deskMsg = `${nama} dihapus.`;
+    moveNote = deskMsg;
+  }
+
+  function resizeActive(presetId) {
+    const p = DESK_PRESETS.find((x) => x.id === presetId);
+    if (!p || !result) return;
+    results = resizeDesk(results, active, { w: p.w, d: p.d });
+    deskMsg = `${results[active].nama} diubah ke ${p.w} × ${p.d} cm.`;
+    moveNote = deskMsg;
+  }
+
+  function moveToDesk(key, toIdx) {
+    if (!Number.isInteger(toIdx)) return;
+    const r = moveItemToDesk(results, active, key, toIdx);
+    if (!r.ok) {
+      deskMsg = r.reason;
+      moveNote = r.reason;
+      return;
+    }
+    results = r.desks;
+    deskMsg = `${r.moved.nama} dipindah dari ${r.moved.from} ke ${r.moved.to}.`;
+    moveNote = deskMsg;
+  }
+
+  // Bagi ulang semua barang secara otomatis (membuang penataan manual dan perpindahan barang).
+  function replanAll() {
+    if (!results.length) return;
+    const out = planDesks(results[0].desk, qtyFromDesks(results));
+    results = out.desks;
+    deskNotes = out.notes;
+    active = 0;
+    deskMsg = "Semua barang dibagi ulang otomatis.";
+    moveNote = deskMsg;
   }
 
   const STEPS = [
@@ -311,7 +415,7 @@
                   {@const q = qty[hw.id] ?? 0}
                   {@const addable = canAdd[hw.id]}
                   <div class="db-hw" id="dhw-{hw.id}" class:selected={q > 0} class:nofit={!addable && q === 0} class:flash={flashHwId === hw.id}>
-                    <div class="db-hw-ilu" style="border-left-color:{hw.color}" aria-hidden="true">{@html hw.ilustrasi}</div>
+                    <div class="db-hw-ilu" style="border-left-color:{hw.color}" aria-hidden="true"><ModelThumb hwId={hw.id} svg={hw.ilustrasi} /></div>
                     <div class="db-hw-info">
                       <div class="db-hw-name">{hw.nama}</div>
                       <div class="db-hw-brand" style="color:{hw.color}">{hw.merek}</div>
@@ -357,7 +461,7 @@
                 <ul class="db-picks">
                   {#each picks as p (p.hw.id)}
                     <li class="db-pick">
-                      <div class="db-pick-ilu" style="border-left-color:{p.hw.color}" aria-hidden="true">{@html p.hw.ilustrasi}</div>
+                      <div class="db-pick-ilu" style="border-left-color:{p.hw.color}" aria-hidden="true"><ModelThumb hwId={p.hw.id} svg={p.hw.ilustrasi} /></div>
                       <div class="db-pick-info">
                         <button class="db-pick-name" onclick={() => jumpToHw(p.hw.id)} aria-label="Lihat {p.hw.nama} di katalog">{p.hw.nama}</button>
                         <div class="db-pick-meta">
@@ -391,35 +495,64 @@
           <div>
             <h2 class="db-result-title">{deskName}</h2>
             <div class="db-result-meta">
-              <span>{result.desk.w} × {result.desk.d} cm</span>
-              <span>{result.itemCount} item</span>
-              <span>{result.areaPct}% meja terpakai</span>
-              <span>{result.totalWatt}W beban</span>
-              <span>{result.totalBerat.toFixed(1)}kg</span>
+              <span>{sum.count > 1 ? `${sum.count} meja` : `${result.desk.w} × ${result.desk.d} cm`}</span>
+              <span>{sum.itemCount} item</span>
+              {#if sum.count === 1}<span>{result.areaPct}% meja terpakai</span>{/if}
+              <span>{sum.totalWatt}W beban</span>
+              <span>{sum.totalBerat.toFixed(1)}kg</span>
             </div>
           </div>
           <div class="db-score">
-            <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label="Skor penataan {result.score} dari 100">
+            <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label="Skor penataan {sum.score} dari 100">
               <circle cx="40" cy="40" r="32" fill="none" stroke="var(--panel-2)" stroke-width="8" />
-              <circle cx="40" cy="40" r="32" fill="none" stroke={scoreColor(result.score)} stroke-width="8" stroke-linecap="round"
-                stroke-dasharray="{(result.score / 100) * (2 * Math.PI * 32)} {2 * Math.PI * 32}" transform="rotate(-90 40 40)" />
-              <text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="700" font-family="monospace">{result.score}</text>
+              <circle cx="40" cy="40" r="32" fill="none" stroke={scoreColor(sum.score)} stroke-width="8" stroke-linecap="round"
+                stroke-dasharray="{(sum.score / 100) * (2 * Math.PI * 32)} {2 * Math.PI * 32}" transform="rotate(-90 40 40)" />
+              <text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="700" font-family="monospace">{sum.score}</text>
               <text x="40" y="52" text-anchor="middle" fill="var(--faint)" font-size="9">/100</text>
             </svg>
-            <div class="db-score-label">Skor penataan</div>
+            <div class="db-score-label">Skor penataan{sum.count > 1 ? " (terendah)" : ""}</div>
           </div>
         </div>
 
-        {#if result.warnings.length || result.tips.length}
+        {#if deskNotes.length || deskMsg || sum.warnings.length || sum.tips.length}
           <div class="db-alerts">
-            {#each result.warnings as w}<div class="db-alert db-alert-{w.level}" role="alert">{w.text}</div>{/each}
-            {#each result.tips as t}<div class="db-alert db-alert-tip">{t}</div>{/each}
+            {#each deskNotes as n}<div class="db-alert db-alert-tip">{n}</div>{/each}
+            {#if deskMsg}<div class="db-alert db-alert-warn" role="status">{deskMsg}</div>{/if}
+            {#each sum.warnings as w}<div class="db-alert db-alert-{w.level}" role="alert">{sum.count > 1 ? `${w.desk}: ` : ""}{w.text}</div>{/each}
+            {#each sum.tips as t}<div class="db-alert db-alert-tip">{sum.count > 1 ? `${t.desk}: ` : ""}{t.text}</div>{/each}
           </div>
         {/if}
 
+        <!-- Tab meja: Meja 1 | Meja 2, tambah/hapus/ukuran/susun ulang -->
+        <div class="db-desktabs" role="tablist" aria-label="Daftar meja">
+          {#each results as r, i (r.id)}
+            <button role="tab" class="db-desktab" class:active={i === active} aria-selected={i === active} onclick={() => openDesk(i)}>
+              <b>{r.nama}</b>
+              <span>{r.desk.w}×{r.desk.d} cm · {r.itemCount} item</span>
+            </button>
+          {/each}
+          <span class="db-desktabs-gap"></span>
+          <label class="db-sizepick">
+            <span>Ukuran {result.nama}</span>
+            <select aria-label="Ukuran {result.nama}" value={DESK_PRESETS.find((p) => p.w === result.desk.w && p.d === result.desk.d)?.id ?? "custom"} onchange={(e) => resizeActive(e.currentTarget.value)}>
+              {#each DESK_PRESETS as p}<option value={p.id}>{p.label}</option>{/each}
+              {#if !DESK_PRESETS.some((p) => p.w === result.desk.w && p.d === result.desk.d)}
+                <option value="custom" disabled>{result.desk.w} × {result.desk.d} cm (kustom)</option>
+              {/if}
+            </select>
+          </label>
+          <button class="btn-small" onclick={addNewDesk} disabled={results.length >= MAX_DESKS}>+ Tambah meja</button>
+          {#if results.length > 1 || result.manual}
+            <button class="btn-small btn-ghost" onclick={replanAll} title="Bagi ulang semua barang secara otomatis">↺ Susun ulang otomatis</button>
+          {/if}
+          {#if results.length > 1}
+            <button class="btn-small btn-ghost" onclick={() => deleteDesk(active)}>Hapus {result.nama}</button>
+          {/if}
+        </div>
+
         <div class="db-card">
           <div class="tabs" role="tablist">
-            {#each [{ id: "denah", label: "Denah atas" }, { id: "3d", label: "Tampilan 3D" }, { id: "daftar", label: "Daftar item" }] as t}
+            {#each [{ id: "denah", label: "Denah atas" }, { id: "3d", label: "Tampilan 3D" }, { id: "langkah", label: "Langkah instalasi" }, { id: "daftar", label: "Daftar item" }] as t}
               <button role="tab" aria-selected={resultTab === t.id} class:active={resultTab === t.id} onclick={() => (resultTab = t.id)}>{t.label}</button>
             {/each}
           </div>
@@ -429,10 +562,20 @@
                 <span>Dilihat dari atas, bagian atas gambar = sisi belakang meja</span>
                 {#if result.manual}<button class="btn-small btn-ghost" onclick={resetLayout}>↺ Penataan AI</button>{/if}
               </div>
-              <DeskPlan {result} onChange={(r) => (result = r)} onNote={(t) => (moveNote = t)} />
+              {#key result.id}
+                <DeskPlan {result} onChange={(r) => setResult(r)} onNote={(t) => (moveNote = t)} />
+              {/key}
               <p class="db-sr" aria-live="polite">{moveNote}</p>
             {:else if resultTab === "3d"}
-              <DeskThree {result} />
+              {#key result.id}
+                <DeskThree {result} />
+              {/key}
+            {:else if resultTab === "langkah"}
+              {#if results.length > 1}
+                <InstallPlayer result={{ desks: results }} kind="desks" />
+              {:else}
+                <InstallPlayer {result} kind="desk" />
+              {/if}
             {:else}
               <div class="db-list">
                 {#each result.items as it (it.key)}
@@ -443,6 +586,14 @@
                       <span>{it.merek}</span>
                     </div>
                     <span class="db-list-meta">{Math.round(it.w)}×{Math.round(it.d)}×{Math.round(it.h)} cm · posisi {Math.round(it.x)}, {Math.round(it.y)}{it.z > 0 ? ` · naik ${Math.round(it.z)} cm` : ""}{it.watt > 0 ? ` · ${it.watt}W` : ""}</span>
+                    {#if results.length > 1}
+                      <select class="db-moveto" aria-label="Pindahkan {it.nama} ke meja lain" onchange={(e) => { moveToDesk(it.key, parseInt(e.currentTarget.value, 10)); e.currentTarget.value = ""; }}>
+                        <option value="">Pindah ke meja…</option>
+                        {#each results as r, i}
+                          {#if i !== active}<option value={i}>{r.nama} ({r.itemCount} item)</option>{/if}
+                        {/each}
+                      </select>
+                    {/if}
                   </div>
                 {/each}
               </div>
@@ -587,6 +738,19 @@
   .db-alert-tip { background: rgba(42, 157, 92, 0.09); border-color: rgba(42, 157, 92, 0.4); color: #145c35; }
   .db-result-body { padding: 16px; }
   .db-rack-label { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-family: var(--mono); font-size: 12px; color: var(--faint); margin-bottom: 8px; }
+  .db-desktabs { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
+  .db-desktab { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; text-align: left; }
+  .db-desktab b { font-size: 13px; }
+  .db-desktab span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .db-desktab:hover { border-color: var(--faint); }
+  .db-desktab.active { background: var(--lime); border-color: var(--lime-edge); color: var(--on-lime); }
+  .db-desktab.active span { color: inherit; opacity: 0.8; }
+  .db-desktab:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+  .db-desktabs-gap { flex: 1; }
+  .db-desktabs > .btn-small, .db-sizepick { align-self: center; }
+  .db-sizepick { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); }
+  .db-sizepick select, .db-moveto { font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-soft); color: var(--text); }
+  .db-moveto { margin-left: auto; flex: none; }
   .db-sr { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
   .db-list { display: flex; flex-direction: column; gap: 6px; }
   .db-list-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 12px; }

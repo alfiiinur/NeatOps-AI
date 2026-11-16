@@ -69,19 +69,28 @@ export function buildTimeline(result) {
     }
   }
 
+  return assembleTimeline(srcSteps, perStep, routes, slots.map((s) => s.key));
+}
+
+/**
+ * Rakit timeline dari langkah + aksi per langkah. Dipakai bersama oleh rak dan meja kerja.
+ * Aksi `cable` diperluas jadi satu aksi per rute; `lane` ("data"|"power") membatasi rute yang digambar
+ * (tanpa `lane` = semua rute). `opts.cableDur` menimpa durasi kabel (mis. meja dengan banyak kabel).
+ */
+export function assembleTimeline(srcSteps, perStep, routes, slotKeys, opts = {}) {
+  const cableDur = opts.cableDur ?? ACTION_DUR.cable;
   const actions = [];
   const steps = [];
   let cursor = 0;
   srcSteps.forEach((s, si) => {
     const start = cursor;
     let local = cursor;
-    for (const a of perStep[si]) {
+    for (const a of perStep[si] ?? []) {
       if (a.tipe === "cable") {
-        // Satu aksi kabel per rute, berurutan.
         routes.forEach((r, ri) => {
-          const dur = ACTION_DUR.cable;
-          actions.push({ id: actions.length, tipe: "cable", routeIdx: ri, step: si, start: local, dur });
-          local += dur;
+          if (a.lane && (r.lane ?? "data") !== a.lane) return;
+          actions.push({ id: actions.length, tipe: "cable", routeIdx: ri, step: si, start: local, dur: cableDur });
+          local += cableDur;
         });
         continue;
       }
@@ -98,11 +107,10 @@ export function buildTimeline(result) {
     duration: cursor,
     steps,
     actions,
-    slotKeys: slots.map((s) => s.key),
+    slotKeys: [...slotKeys],
     routes: routes.map((r) => ({ lane: r.lane ?? "data", warna: r.warna, label: r.label, fromKey: r.fromKey, toKey: r.toKey })),
   };
 }
-
 /** Indeks langkah yang aktif pada waktu t. */
 export function stepIndexAt(tl, t) {
   if (!tl.steps.length) return 0;
@@ -122,6 +130,7 @@ export function stateAt(tl, tRaw) {
   for (const k of tl.slotKeys) units[k] = { slide: 0, screws: 0, led: 0, blank: 0 };
   const cables = tl.routes.map(() => 0);
   let rail = 0;
+  const rails = {}; // progres rel per rak (aksi rail bersasaran slotKey = id rak; dipakai multi-rak)
   const active = [];
 
   for (const a of tl.actions) {
@@ -130,7 +139,8 @@ export function stateAt(tl, tRaw) {
     if (raw > 0 && raw < 1 && a.slotKey != null && !active.includes(a.slotKey)) active.push(a.slotKey);
     switch (a.tipe) {
       case "rail":
-        rail = Math.max(rail, p);
+        if (a.slotKey != null) rails[a.slotKey] = Math.max(rails[a.slotKey] ?? 0, p);
+        else rail = Math.max(rail, p);
         break;
       case "slide-in":
         units[a.slotKey].slide = p;
@@ -150,5 +160,5 @@ export function stateAt(tl, tRaw) {
         break;
     }
   }
-  return { t, stepIndex: stepIndexAt(tl, t), rail, units, cables, active };
+  return { t, stepIndex: stepIndexAt(tl, t), rail, rails, units, cables, active };
 }

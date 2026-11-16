@@ -12,6 +12,7 @@
     rackU,
     usedU,
     picks,
+    racks = [],
     result,
     generating,
     onPreset,
@@ -34,7 +35,7 @@
       ? ["Tips foto rak", "Rak berapa U?", "Lewati foto"]
       : step === 2
         ? ["Paket kantor kecil", "Paket data center mini", "Paket jaringan aman", "Paket FTTH", "Cek kapasitas", "Generate susunan"]
-        : ["Jelaskan susunan", "Lihat 3D", "Cek daya", "Kabel apa saja?", "Langkah pertama?", "Edit hardware"],
+        : ["Jelaskan susunan", racks.length > 1 ? "Kenapa banyak rak?" : "Lihat 3D", "Cek daya", "Kabel apa saja?", "Langkah pertama?", "Edit hardware"],
   );
 
   async function push(from, text) {
@@ -55,7 +56,7 @@
           ? "Foto rak sudah saya terima. Sekarang isi info rak dan pilih hardware di tengah. Mau pakai paket siap pakai? Klik salah satu chip di bawah."
           : "Sekarang isi info rak dan pilih hardware di tengah. Mau pakai paket siap pakai? Klik salah satu chip di bawah.");
       } else if (s === 3 && result) {
-        push("bot", `Susunan selesai. Skor layout ${result.score}/100, ${result.usedU}U terpakai dari ${result.rackU}U. Tanya saya soal susunan, daya, atau kabelnya.`);
+        push("bot", `Susunan selesai. Skor layout ${result.score}/100${result.cableScore != null ? `, skor kabel ${result.cableScore}/100` : ""}, ${racks.length > 1 ? `${racks.length} rak (${racks.map((r) => r.nama).join(", ")}), total ${racks.reduce((s, r) => s + r.usedU, 0)}U terpakai` : `${result.usedU}U terpakai dari ${result.rackU}U`}. Tanya saya soal susunan, daya, kabel, atau "kabelnya sudah aman?".`);
       }
     });
   });
@@ -74,6 +75,15 @@
       hasPhoto,
       rackU,
       usedU,
+      racks: racks.map((r) => ({
+        nama: r.nama,
+        rackU: r.rackU,
+        usedU: r.usedU,
+        freeU: r.freeU,
+        totalWatt: r.totalWatt,
+        score: r.score,
+        units: r.slots.filter((s) => !s.auto).map((s) => `U${s.uStart} ${s.nama}`),
+      })),
       picks: picks.map((p) => ({ ...plain(p.hw), qty: p.qty })),
       result: result
         ? {
@@ -120,7 +130,7 @@
         if (!picks.length) return `Rak ${rackU}U masih kosong. Pilih hardware dulu di panel tengah.`;
         return free >= 0
           ? `${usedU}U dari ${rackU}U terpakai, sisa ${free}U. ${free < 2 ? "Sebaiknya sisakan minimal 2U untuk ekspansi." : "Masih ada ruang untuk ekspansi."}`
-          : `Kelebihan ${-free}U. Butuh ${usedU}U tapi rak hanya ${rackU}U. Kurangi hardware atau naikkan ukuran rak.`;
+          : `Butuh ${usedU}U, lebih dari satu rak ${rackU}U, jadi hardware akan dibagi otomatis ke beberapa rak (jaringan, server) dan tiap rak mendapat UPS/PDU sendiri bila kamu memilihnya. Mau satu rak saja? Naikkan ukuran rak.`;
       }
       if (/generate|buat|susun|rakit/.test(t)) {
         if (!picks.length) return "Belum ada hardware yang dipilih. Klik + di katalog atau pakai salah satu paket.";
@@ -144,15 +154,29 @@
       const n = result.slots.filter((s) => !s.auto).length;
       return `Saya buka tab Tampilan 3D: ${n} unit tersusun dari U1 sampai U${result.rackU}. Seret gambarnya untuk memutar.`;
     }
+    if (racks.length > 1 && /berapa rak|jumlah rak|rak tambahan|antar rak|uplink|kenapa.*rak|bagi/.test(t)) {
+      onResultTab("kabel");
+      return `Ada ${racks.length} rak: ${racks.map((r) => `${r.nama} (${r.usedU}/${r.rackU}U)`).join(", ")}. Hardware dibagi per fungsi karena tidak muat di satu rak. Rak berswitch jadi pusat dan rak lain tersambung lewat uplink data, sedangkan tiap rak punya UPS/PDU sendiri. Detail kabel antar rak saya buka di tab Cable Management.`;
+    }
     if (/jelas|susunan|urutan|posisi/.test(t)) {
       onResultTab("susunan");
-      const list = result.slots.filter((s) => !s.auto).map((s) => `U${s.uStart} ${s.nama}`).join(", ");
+      const unitList = (r) => r.slots.filter((s) => !s.auto).map((s) => `U${s.uStart} ${s.nama}`).join(", ");
+      const list = racks.length > 1 ? racks.map((r) => `${r.nama}: ${unitList(r)}`).join(" | ") : unitList(result);
       return `Dari atas ke bawah: ${list}. Prinsipnya perangkat ringan dan patch panel di atas, unit berat (server, UPS) di bawah supaya rak stabil dan kabel daya pendek.`;
     }
     if (/daya|watt|listrik|ups/.test(t)) {
       if (!result.upsCapacity) return `Total beban ${result.totalWatt}W, tapi belum ada UPS. Tambahkan UPS supaya perangkat aman saat listrik padam.`;
       const pct = Math.round((result.totalWatt / result.upsCapacity) * 100);
       return `Total beban ${result.totalWatt}W, kapasitas UPS ${result.upsCapacity}W (${pct}% terpakai). ${pct > 80 ? "Sudah di atas 80%, sebaiknya tambah UPS." : "Masih aman di bawah 80%."}`;
+    }
+    if (/aman|safety|keamanan|rapi|kerapian|masalah/.test(t) && result.cableIssues) {
+      onResultTab("kabel");
+      const top = result.cableIssues.filter((i) => i.level !== "info");
+      if (!top.length) return `Skor kabel ${result.cableScore}/100. Semua kabel lolos pemeriksaan kerapian & keamanan.`;
+      return `Skor kabel ${result.cableScore}/100. Temuan utama: ${top
+        .slice(0, 3)
+        .map((i) => `${i.judul} (${i.saran})`)
+        .join("; ")}. Detailnya saya buka di tab Cable Management.`;
     }
     if (/kabel|cable/.test(t)) {
       onResultTab("kabel");

@@ -1,6 +1,9 @@
 // NeatOps AI — Rakit Rak Simulator
 // Menerima daftar hardware yang dipilih + ukuran rak,
 // menghasilkan susunan unit optimal dan rencana cable management.
+import { MODEL_CATALOG } from "./hardwareModels.js";
+import { rackCabling, cableBom, onShelf, shelfUnits } from "./rackCabling.js";
+import { auditRackCables } from "./rackCableAudit.js";
 
 // ─── Katalog Hardware ────────────────────────────────────────────────
 export const HARDWARE_CATALOG = [
@@ -888,6 +891,23 @@ const DESK_SPEC = {
 };
 for (const h of HARDWARE_CATALOG) Object.assign(h, DESK_SPEC[h.id]);
 
+// Hardware tambahan yang berasal dari model 3D di src/lib/statics (sudah membawa dimCm & deskZone).
+HARDWARE_CATALOG.push(...MODEL_CATALOG);
+
+// Perangkat non-rackmount bermodel 3D diletakkan di atas rack shelf: tinggi U mengikuti tinggi
+// aslinya (mis. router berantena 15 cm → 2U), bukan dipaksa 1U.
+for (const h of HARDWARE_CATALOG) {
+  if (!onShelf(h)) continue;
+  h.unitHeight = shelfUnits(h.dimCm);
+  const note = `Bukan rackmount: di rak diletakkan di atas rack shelf (${h.unitHeight}U).`;
+  h.desc = /dihitung 1U untuk perencanaan\.?/i.test(h.desc)
+    ? h.desc.replace(
+        /(Bukan rackmount, )?dihitung 1U untuk perencanaan\.?/i,
+        note,
+      )
+    : `${h.desc} ${note}`;
+}
+
 // ─── Cari hardware (dipakai kolom search Rakit Rak) ────────────────────
 /** Filter katalog berdasarkan nama, merek, deskripsi, kategori, atau tag. */
 export function filterHardware(query) {
@@ -922,7 +942,7 @@ const SLOT_COLORS = {
 // 7. KVM, sensor      → atas dekat patch panel
 // 8. Blanking panel   → isi slot kosong sisa
 
-const TYPE_PRIORITY = {
+export const TYPE_PRIORITY = {
   daya: 10, // paling bawah
   server: 20,
   storage: 25,
@@ -975,6 +995,30 @@ export function generateRackLayout(rackU, selectedItems) {
     });
   }
 
+  return evaluateLayout(rackU, assignU(slots));
+}
+
+/**
+ * Susun rak dari daftar unit (urutan = dari atas ke bawah) lalu isi sisa U dengan blanking panel.
+ * Dipakai multi-rak untuk memindah unit antar rak tanpa mengacak urutan manual.
+ */
+export function layoutFromUnits(rackU, unitsTopDown) {
+  const slots = unitsTopDown.map((u, i) => ({ ...u, key: u.key ?? `u${i}`, auto: false }));
+  const used = slots.reduce((s, u) => s + u.unitHeight, 0);
+  for (let i = 0; i < Math.max(0, rackU - used); i++) {
+    slots.push({
+      key: `b${i}`,
+      id: "blanking-auto",
+      nama: "Blanking Panel",
+      merek: "—",
+      tipe: "kosong",
+      unitHeight: 1,
+      watt: 0,
+      beratKg: 0,
+      color: "#444",
+      auto: true,
+    });
+  }
   return evaluateLayout(rackU, assignU(slots));
 }
 
@@ -1116,7 +1160,20 @@ export function evaluateLayout(rackU, slotsIn) {
 
   // ─── Rencana Cable Management ────────────────────────────────────
   const cableRoutes = buildCableRoutes(slots);
-  const cableShoppingList = buildCableList(units);
+  // Kabel per sambungan (port → port) beserta panjang dari jalurnya di rak. `points` tidak disimpan
+  // (dihitung ulang oleh scene 3D) supaya data project tetap ringan.
+  const cabling = rackCabling(slots);
+  // Cek kerapian & keamanan kabel (skor terpisah dari skor layout).
+  const audit = auditRackCables(slots, cabling);
+  const cables = cabling.cables.map(({ points, ...c }) => ({
+    ...c,
+    status: audit.status[c.id] ?? "ok",
+  }));
+  const cableUnconnected = cabling.unconnected;
+  const cableIssues = audit.issues;
+  const cableScore = audit.score;
+  const cableSummary = audit.summary;
+  const cableShoppingList = buildCableList(units, cabling.cables);
   const installSteps = buildInstallSteps(slots, units, rackU);
 
   return {
@@ -1131,6 +1188,11 @@ export function evaluateLayout(rackU, slotsIn) {
     warnings,
     tips,
     cableRoutes,
+    cables,
+    cableUnconnected,
+    cableIssues,
+    cableScore,
+    cableSummary,
     cableShoppingList,
     installSteps,
   };
@@ -1228,45 +1290,9 @@ function buildCableRoutes(slots) {
 }
 
 // ─── Daftar belanja kabel ────────────────────────────────────────────
-function buildCableList(units) {
-  const list = [];
-  const serverCount = units.filter((u) => u.tipe === "server").length;
-  const switchCount = units.filter((u) => u.tags?.includes("switch")).length;
-  const hasPDU = units.some((u) => u.tags?.includes("pdu"));
-  const hasUPS = units.some((u) => u.tags?.includes("ups"));
-
-  if (serverCount > 0) {
-    list.push({
-      nama: "Cat6A Patch Cord (Biru) 1m",
-      qty: serverCount * 2,
-      ket: "2 per server (data + manajemen)",
-      warna: "#3b82d6",
-    });
-  }
-  if (switchCount > 0) {
-    list.push({
-      nama: "Cat6A Patch Cord (Kuning) 0.5m — Uplink",
-      qty: switchCount,
-      ket: "1 per switch ke router/uplink",
-      warna: "#c98a0b",
-    });
-  }
-  if (hasPDU && serverCount > 0) {
-    list.push({
-      nama: "IEC C13→C14 Power Cord Hijau 2m",
-      qty: serverCount + switchCount,
-      ket: "1 per perangkat aktif ke PDU",
-      warna: "#2a9d5c",
-    });
-  }
-  if (hasUPS && hasPDU) {
-    list.push({
-      nama: "IEC C19→C20 Power Cord Merah 2m",
-      qty: 1,
-      ket: "UPS ke PDU",
-      warna: "#d23a40",
-    });
-  }
+function buildCableList(units, routed = []) {
+  // Patch cord, power cord, dan fiber patchcord: dihitung per sambungan & panjang standar.
+  const list = cableBom(routed);
   const oltCount = units.filter((u) => u.tags?.includes("olt")).length;
   const odfCount = units.filter((u) => u.tags?.includes("odf")).length;
   const odpPorts = units
@@ -1276,9 +1302,9 @@ function buildCableList(units) {
   const closureCount = units.filter((u) => u.tags?.includes("closure")).length;
   if (oltCount > 0 || odfCount > 0) {
     list.push({
-      nama: "Patchcord SC-SC OS2 (Kuning) 2m",
+      nama: "Patchcord SC-SC OS2 (Kuning) cadangan",
       qty: Math.max(2, (oltCount + odfCount) * 2),
-      ket: "2 per OLT/ODF (jalur aktif + cadangan)",
+      ket: "Cadangan untuk penggantian cepat (2 per OLT/ODF)",
       warna: "#eab308",
     });
   }

@@ -23,7 +23,7 @@
       ? ["Meja berapa cm?", "Setup kerja", "Setup gaming", "Meja kantor kecil"]
       : step === 2
         ? ["Setup kerja", "Setup gaming", "Meja kantor kecil", "Cek ruang meja", "Generate penataan"]
-        : ["Jelaskan penataan", "Lihat 3D", "Cek daya", "Apa yang kurang?", "Edit hardware"],
+        : ["Jelaskan penataan", "Lihat 3D", "Langkah pemasangan", "Cek daya", "Edit hardware"],
   );
 
   async function push(from, text) {
@@ -102,6 +102,10 @@
       onGoStep(2);
       return "Saya buka lagi pilihan hardware. Generate ulang setelah selesai mengubah.";
     }
+    if (/langkah|instal|pasang/.test(t)) {
+      onResultTab("langkah");
+      return "Saya buka tab Langkah instalasi. Tekan Putar untuk melihat animasi pemasangan di meja: dari menyiapkan meja, menaruh perangkat, menyambung kabel, sampai menyalakan.";
+    }
     if (/3d|tiga ?d|putar|dimensi/.test(t)) {
       onResultTab("3d");
       return "Saya buka tab Tampilan 3D. Seret untuk memutar, klik item untuk detail.";
@@ -118,7 +122,7 @@
       if (result.warnings.length) return `Yang perlu diperhatikan: ${result.warnings.map((w) => w.text).join(" ")}`;
       return result.tips[0] ?? "Penataan sudah baik, tidak ada peringatan.";
     }
-    return 'Coba tanya "jelaskan penataan", "lihat 3D", "cek daya", atau "apa yang kurang?".';
+    return 'Coba tanya "jelaskan penataan", "lihat 3D", "langkah pemasangan", "cek daya", atau "apa yang kurang?".';
   }
 
   async function send(text) {

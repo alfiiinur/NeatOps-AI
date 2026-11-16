@@ -10,7 +10,13 @@ export function layoutUnits(slots, { unitH = 1, gap = 0.06 } = {}) {
   for (const s of [...slots].reverse()) {
     const height = s.unitHeight * unitH;
     if (y > 0) y += gap;
-    byKey.set(s.key, { key: s.key, y0: y, y1: y + height, yCenter: y + height / 2, height });
+    byKey.set(s.key, {
+      key: s.key,
+      y0: y,
+      y1: y + height,
+      yCenter: y + height / 2,
+      height,
+    });
     y += height;
   }
   return { items: slots.map((s) => byKey.get(s.key)), totalH: y };
@@ -27,6 +33,11 @@ const PRESETS = {
   }),
   samping: (centerY, dist) => ({
     position: [dist * 1.25, centerY, 0],
+    target: [0, centerY, 0],
+  }),
+  // Sisi belakang: tempat kabel daya, NIC server, dan KVM.
+  belakang: (centerY, dist) => ({
+    position: [-dist * 0.45, centerY + dist * 0.18, -dist * 1.15],
     target: [0, centerY, 0],
   }),
   atas: (centerY, dist) => ({
@@ -48,13 +59,13 @@ export function cameraPreset(name, { centerY, dist }) {
 /** Easing halus 0→1 untuk tween kamera & susunan. */
 export function easeInOutCubic(t) {
   const x = Math.max(0, Math.min(1, t));
-  return x < 0.5 ? 4 * x * x * x : 1 - ((-2 * x + 2) ** 3) / 2;
+  return x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2;
 }
 
 /** Jarak kamera agar setinggi unit pas mengisi bingkai (fov 45°). */
 export function closeupDistance(heightU, fovDeg = 45) {
   if (!Number.isFinite(heightU) || heightU <= 0) return 4.5;
-  const fit = (heightU / 2 / Math.tan(((fovDeg * Math.PI) / 360))) * 2.4;
+  const fit = (heightU / 2 / Math.tan((fovDeg * Math.PI) / 360)) * 2.4;
   return Math.max(4.5, fit);
 }
 

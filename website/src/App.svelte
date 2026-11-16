@@ -1,6 +1,10 @@
-<script>
-  import { onMount } from "svelte";
+﻿<script>
+  import { onMount, untrack } from "svelte";
   import Navbar from "./lib/shared/Navbar.svelte";
+  import Landing from "./lib/landing/Landing.svelte";
+  import NotFound from "./lib/shared/NotFound.svelte";
+  import { currentRoute, navigate, initRouter } from "./lib/core/router.svelte.js";
+  import { buildPath } from "./lib/core/router.js";
   import PhotoInput from "./lib/audit/PhotoInput.svelte";
   import Results from "./lib/audit/Results.svelte";
   import Chat from "./lib/audit/Chat.svelte";
@@ -19,11 +23,19 @@
   import ShareModal from "./lib/shared/ShareModal.svelte";
   import { loadSettings, saveSettings, DEFAULT_SETTINGS } from "./lib/core/settings.js";
   import ProjectBar from "./lib/shared/ProjectBar.svelte";
-  import { loadPrefs } from "./lib/core/prefs.svelte.js";
+  import { loadPrefs, prefs } from "./lib/core/prefs.svelte.js";
+  import { startDomI18n, retranslateAll } from "./lib/core/domI18n.js";
   import { t } from "./lib/core/i18n.svelte.js";
   import { loadProjects, saveProjects, newProject, autoProjectName, validateProjectName } from "./lib/shared/projects.js";
 
-  let page = $state("home"); // "home" | "hardware" | "config" | "rakit" | "calculator"
+  // Halaman diturunkan dari URL: / (landing), /project/<id>[/<tab>], selain itu not found.
+  const route = $derived(currentRoute());
+  const page = $derived(route.view === "project" ? route.page : "home"); // "home" | "hardware" | "config" | "rakit" | "calculator"
+  let ready = $state(false); // project dari localStorage sudah dimuat
+  const notFound = $derived(
+    route.view === "notfound" || (route.view === "project" && ready && !projects.some((p) => p.id === route.projectId)),
+  );
+  const hasProjects = $derived(ready && projects.some((p) => p.photo || p.result || p.brief));
 
   let photo = $state(null); // { name, dataUrl }
   let analyzing = $state(false);
@@ -46,7 +58,15 @@
   let samples = $state(null);
   let runToken = 0;
 
+  // Bahasa Inggris untuk halaman yang teksnya masih ditulis Indonesia (Rakit Rak, Hardware, Config, Kalkulator).
+  $effect(() => {
+    prefs.lang;
+    untrack(retranslateAll);
+  });
+
   onMount(() => {
+    const stopRouter = initRouter();
+    const stopI18n = startDomI18n();
     loadPrefs(localStorage);
     history = loadHistory(localStorage).items;
     settings = loadSettings(localStorage);
@@ -56,7 +76,66 @@
     const active = currentProject();
     photo = active.photo;
     result = active.result;
+    ready = true;
+    return () => {
+      stopRouter();
+      stopI18n();
+    };
   });
+
+  // URL → project aktif (refresh, back/forward, link langsung).
+  $effect(() => {
+    if (!ready || route.view !== "project") return;
+    const id = route.projectId;
+    untrack(() => {
+      if (id === currentProjectId) return;
+      const p = projects.find((x) => x.id === id);
+      if (!p) return;
+      if (analyzing) {
+        runToken++; // batalkan analisis project sebelumnya
+        analyzing = false;
+      }
+      currentProjectId = id;
+      photo = p.photo;
+      result = p.result;
+      tab = "ringkasan";
+      highlight = null;
+      persistProjects();
+    });
+  });
+
+  function startFromLanding() {
+    persistProjects();
+    navigate(buildPath(currentProjectId));
+  }
+
+  function exploreFromLanding(page = "hardware") {
+    persistProjects();
+    navigate(buildPath(currentProjectId, page));
+  }
+
+  // Form di landing: foto + tujuan jadi isi awal project (project aktif dipakai bila masih kosong).
+  async function submitFromLanding({ file, brief }) {
+    let ph = null;
+    if (file) {
+      try {
+        ph = { name: file.name || "foto-rak.jpg", dataUrl: await fileToDataUrl(file) };
+      } catch {
+        storageWarning = t("app.warnProject");
+      }
+    }
+    const cur = currentProject();
+    const reuse = !cur.photo && !cur.result && !cur.brief;
+    const target = reuse ? cur : newProject(autoProjectName(projects));
+    const now = new Date().toISOString();
+    const filled = { ...target, photo: ph, brief, updatedAt: now };
+    projects = reuse ? projects.map((p) => (p.id === target.id ? filled : p)) : [...projects, filled];
+    currentProjectId = filled.id;
+    photo = ph;
+    resetAnalysis();
+    persistProjects();
+    navigate(buildPath(filled.id));
+  }
 
   // Tulis balik foto & hasil sesi ke project aktif + persist otomatis.
   $effect(() => {
@@ -87,14 +166,8 @@
 
   function selectProject(id) {
     if (analyzing || id === currentProjectId) return;
-    const p = projects.find((x) => x.id === id);
-    if (!p) return;
-    currentProjectId = id;
-    photo = p.photo;
-    result = p.result;
-    tab = "ringkasan";
-    highlight = null;
-    persistProjects();
+    if (!projects.some((x) => x.id === id)) return;
+    navigate(buildPath(id)); // state project dimuat oleh $effect URL → project
   }
 
   function createProject() {
@@ -105,6 +178,7 @@
     photo = null;
     resetAnalysis();
     persistProjects();
+    navigate(buildPath(p.id));
   }
 
   function renameProject(id, name) {
@@ -128,6 +202,7 @@
       result = fallback.result;
       tab = "ringkasan";
       highlight = null;
+      navigate(buildPath(fallback.id), { replace: true });
     }
     persistProjects();
   }
@@ -231,6 +306,7 @@
     if (h.projectId && h.projectId !== currentProjectId && projects.some((p) => p.id === h.projectId)) {
       currentProjectId = h.projectId;
       persistProjects();
+      navigate(buildPath(h.projectId));
     }
     photo = h.photo;
     result = h.result;
@@ -246,9 +322,15 @@
   }
 </script>
 
+{#if route.view === "landing"}
+  <Landing {hasProjects} onStart={startFromLanding} onSubmit={submitFromLanding} onExplore={exploreFromLanding} />
+{:else if notFound}
+  <NotFound onBack={() => navigate("/")} />
+{:else if route.view === "project" && ready}
 <Navbar
   {page}
-  onNav={(p) => (page = p)}
+  onNav={(p) => navigate(buildPath(currentProjectId, p))}
+  onHome={() => navigate("/")}
   onSettings={() => (showSettings = true)}
 />
 
@@ -273,6 +355,13 @@
       onDelete={deleteProject}
       onShare={() => (showShare = true)}
     />
+
+    {#if currentProject().brief}
+      <div class="panel brief-note">
+        <b>{t("app.briefLabel")}:</b>
+        {currentProject().brief}
+      </div>
+    {/if}
 
     <div class="workspace">
       <Chat
@@ -326,8 +415,7 @@
   <NetworkConfig />
 {:else if page === "calculator"}
   <Calculators />
-{:else if page === "calculator"}
-  <Calculators />
+{/if}
 {/if}
 
 {#if showSettings}

@@ -19,10 +19,16 @@ describe("layoutUnits", () => {
       ],
       { unitH: 1, gap: 0.06 },
     );
-    assert.deepEqual(r.items.map((i) => i.key), ["a", "b"]);
+    assert.deepEqual(
+      r.items.map((i) => i.key),
+      ["a", "b"],
+    );
     assert.equal(r.items[0].height, 1);
     assert.equal(r.items[1].height, 2);
-    assert.ok(r.items[0].yCenter > r.items[1].yCenter, "item pertama paling atas");
+    assert.ok(
+      r.items[0].yCenter > r.items[1].yCenter,
+      "item pertama paling atas",
+    );
   });
 
   it("posisi Y eksak dari bawah + total tinggi", () => {
@@ -73,10 +79,25 @@ describe("cameraPreset", () => {
     assert.deepEqual(p.target, [0, 6, 0]);
   });
 
+  it("belakang: kamera di sisi -z (tempat kabel daya & NIC)", () => {
+    const p = cameraPreset("belakang", { centerY: 6, dist: 12 });
+    assert.ok(p.position[2] < 0);
+    assert.deepEqual(p.target, [0, 6, 0]);
+  });
+
   it("menolak nama & jarak tak valid", () => {
-    assert.throws(() => cameraPreset("belakang", { centerY: 6, dist: 12 }), /Preset/);
-    assert.throws(() => cameraPreset("depan", { centerY: 6, dist: 0 }), /Jarak/);
-    assert.throws(() => cameraPreset("depan", { centerY: 6, dist: NaN }), /Jarak/);
+    assert.throws(
+      () => cameraPreset("bawah", { centerY: 6, dist: 12 }),
+      /Preset/,
+    );
+    assert.throws(
+      () => cameraPreset("depan", { centerY: 6, dist: 0 }),
+      /Jarak/,
+    );
+    assert.throws(
+      () => cameraPreset("depan", { centerY: 6, dist: NaN }),
+      /Jarak/,
+    );
   });
 });
 

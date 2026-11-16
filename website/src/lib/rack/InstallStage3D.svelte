@@ -4,7 +4,19 @@
   import { createRackScene } from "./rackThreeScene.js";
   import { HARDWARE_CATALOG } from "./rackSimulator.js";
 
-  let { slots, routes = [], view, reduced = false, onFail = () => {} } = $props();
+  import ArLauncher from "./ArLauncher.svelte";
+  import ArStepControls from "./ArStepControls.svelte";
+
+  // player (opsional): pemutar dari InstallPlayer; dipakai untuk kontrol langkah di overlay AR.
+  let { slots, routes = [], view, reduced = false, player = null, onFail = () => {} } = $props();
+
+  // Selama sesi AR, rAF jendela bisa berhenti: jalankan pemutar lewat frame XR.
+  function onArActive(on) {
+    if (!player) return;
+    const api = scene?.getXr();
+    if (on && api) player.useScheduler(api.requestFrame, api.cancelFrame);
+    else player.useScheduler();
+  }
 
   let canvas = $state(null);
   let scene = null;
@@ -63,9 +75,25 @@
     bind:this={canvas}
     aria-label="Animasi 3D pemasangan rak server. Seret untuk memutar, roda mouse untuk zoom."
   ></canvas>
+  <div class="i3-ar">
+    <ArLauncher getApi={() => scene?.getXr()} overlay={arControls} onActive={onArActive} />
+  </div>
 </div>
+
+{#snippet arControls()}
+  {#if player}<ArStepControls {player} />{/if}
+{/snippet}
 
 <style>
   .i3 { position: absolute; inset: 0; }
+  .i3-ar {
+    position: absolute;
+    top: 10px;
+    right: 10px;
+    background: rgba(10, 13, 18, 0.86);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    padding: 2px;
+  }
   canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
 </style>

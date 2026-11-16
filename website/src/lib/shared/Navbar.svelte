@@ -1,7 +1,13 @@
 <script>
   import { t } from "../core/i18n.svelte.js";
 
-  let { page, onNav, onSettings } = $props();
+  let { page, onNav, onSettings, onHome = undefined } = $props();
+
+  function goHome(e) {
+    if (!onHome || e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault();
+    onHome();
+  }
 
   const navItems = [
     {
@@ -34,8 +40,10 @@
 
 <header class="topbar">
   <div class="brand">
-    <div class="brand-mark" aria-hidden="true">N</div>
-    <div class="brand-name">NeatOps <span>AI</span></div>
+    <a class="brand-link" href="/" onclick={goHome} aria-label={t("nav.brandAria")}>
+      <div class="brand-mark" aria-hidden="true">N</div>
+      <div class="brand-name">NeatOps <span>AI</span></div>
+    </a>
     <span class="badge-sim">{t("nav.badge")}</span>
   </div>
 
@@ -63,6 +71,7 @@
 </header>
 
 <style>
+  .brand-link { display: flex; align-items: center; gap: 10px; color: inherit; text-decoration: none; }
   .topbar-btn { white-space: nowrap; }
   @media (max-width: 640px) {
     .topbar-btn-label { display: none; }
