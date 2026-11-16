@@ -16,7 +16,22 @@ npm install
 npm run dev
 ```
 
-Buka http://localhost:5173/ di browser.
+Buka http://localhost:5173/ di browser. Halaman awal adalah landing page; tombol **Mulai** membuka workspace.
+
+## Rute
+
+| URL                        | Isi                     |
+| -------------------------- | ----------------------- |
+| `/`                        | Landing page            |
+| `/project/<id>`            | Workspace, tab Analisis |
+| `/project/<id>/rakit`      | Rakit Rak               |
+| `/project/<id>/hardware`   | Hardware                |
+| `/project/<id>/config`     | Network Config          |
+| `/project/<id>/calculator` | Calculator              |
+
+Project disimpan di localStorage, jadi link `/project/<id>` hanya terbuka di browser yang membuatnya; selain itu tampil "Project tidak ditemukan".
+
+Routing memakai History API. Dev server Vite sudah mengarahkan semua path ke `index.html`. Di production, hosting harus meneruskan semua path ke `index.html` (SPA fallback), misalnya `/* /index.html 200` di Netlify (`public/_redirects`) atau `try_files $uri /index.html;` di Nginx.
 
 Perintah lain:
 
@@ -33,7 +48,7 @@ npm test         # uji unit (node:test)
 2. Tekan **Analisis foto ini** → progres simulasi berjalan ±2,5 detik.
 3. Baca hasil di 4 tab:
    - **Ringkasan** — vonis Aman / Perlu Perhatian / Berbahaya + skor 0–100
-     + skor 6 kategori (Kabel, Daya, Ventilasi, Grounding, Label, Struktur).
+     - skor 6 kategori (Kabel, Daya, Ventilasi, Grounding, Label, Struktur).
    - **Temuan** — breakdown bernomor; arahkan/klik untuk menandai lokasinya
      di foto, klik lagi untuk langkah perbaikan + acuan standar.
    - **Visual rapi** — geser pembanding sebelum/sesudah (simulasi overlay

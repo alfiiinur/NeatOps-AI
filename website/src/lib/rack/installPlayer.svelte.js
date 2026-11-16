@@ -12,10 +12,11 @@ import {
 
 /**
  * Buat player. `getResult` dipanggil ulang tiap kali timeline dibutuhkan (reaktif terhadap result).
+ * `build` = pembangun timeline (default: rak; meja kerja memakai buildDeskTimeline).
  * Pakai `destroy()` saat komponen di-unmount.
  */
-export function createInstallPlayer(getResult) {
-  const tl = $derived(buildTimeline(getResult()));
+export function createInstallPlayer(getResult, build = buildTimeline) {
+  const tl = $derived(build(getResult()));
   let t = $state(0);
   let playing = $state(false);
   let speed = $state(1);
@@ -23,16 +24,25 @@ export function createInstallPlayer(getResult) {
   let compare = $state(null); // null | "before" | "after"
   let mode = $state("2d"); // "2d" | "3d"
   const reduced =
-    typeof window !== "undefined" && (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
+    typeof window !== "undefined" &&
+    (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false);
 
-  const view = $derived(stateAt(tl, compare === "before" ? 0 : compare === "after" ? tl.duration : t));
+  const view = $derived(
+    stateAt(
+      tl,
+      compare === "before" ? 0 : compare === "after" ? tl.duration : t,
+    ),
+  );
 
   let raf = 0;
+  // Penjadwal frame: rAF jendela, atau penggantinya selama sesi AR (lihat useScheduler).
+  let schedule = (fn) => requestAnimationFrame(fn);
+  let unschedule = (id) => cancelAnimationFrame(id);
   let last = 0;
   let holdMs = 0; // reduced-motion: waktu tunggu sebelum loncat ke langkah berikut
 
   function stop() {
-    if (raf) cancelAnimationFrame(raf);
+    if (raf) unschedule(raf);
     raf = 0;
   }
 
@@ -52,14 +62,14 @@ export function createInstallPlayer(getResult) {
       t = r.t;
       if (r.ended) return finish();
     }
-    if (playing) raf = requestAnimationFrame(tick);
+    if (playing) raf = schedule(tick);
   }
 
   function finish() {
     if (loop) {
       t = 0;
       holdMs = 0;
-      raf = requestAnimationFrame(tick);
+      raf = schedule(tick);
       return;
     }
     playing = false;
@@ -74,7 +84,7 @@ export function createInstallPlayer(getResult) {
     last = performance.now();
     holdMs = 0;
     stop();
-    raf = requestAnimationFrame(tick);
+    raf = schedule(tick);
   }
   function pause() {
     playing = false;
@@ -82,21 +92,48 @@ export function createInstallPlayer(getResult) {
   }
 
   return {
-    get tl() { return tl; },
-    get view() { return view; },
-    get t() { return t; },
-    get playing() { return playing; },
-    get speed() { return speed; },
-    get loop() { return loop; },
-    get compare() { return compare; },
-    get mode() { return mode; },
-    get reduced() { return reduced; },
-    get stepIndex() { return view.stepIndex; },
-    get ended() { return t >= tl.duration - 1e-6; },
+    get tl() {
+      return tl;
+    },
+    get view() {
+      return view;
+    },
+    get t() {
+      return t;
+    },
+    get playing() {
+      return playing;
+    },
+    get speed() {
+      return speed;
+    },
+    get loop() {
+      return loop;
+    },
+    get compare() {
+      return compare;
+    },
+    get mode() {
+      return mode;
+    },
+    get reduced() {
+      return reduced;
+    },
+    get stepIndex() {
+      return view.stepIndex;
+    },
+    get ended() {
+      return t >= tl.duration - 1e-6;
+    },
     play,
     pause,
-    toggle() { playing ? pause() : play(); },
-    seek(v) { t = clampTime(v, tl.duration); compare = null; },
+    toggle() {
+      playing ? pause() : play();
+    },
+    seek(v) {
+      t = clampTime(v, tl.duration);
+      compare = null;
+    },
     next() {
       const nx = nextStepTime(tl, t);
       t = nx ?? tl.duration;
@@ -108,17 +145,45 @@ export function createInstallPlayer(getResult) {
     },
     goStep(i) {
       const s = tl.steps[i];
-      if (s) { t = s.start; compare = null; }
+      if (s) {
+        t = s.start;
+        compare = null;
+      }
     },
-    restart() { t = 0; compare = null; },
-    setSpeed(v) { if (SPEEDS.includes(v)) speed = v; },
-    cycleSpeed() { speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length]; },
-    setLoop(v) { loop = !!v; },
+    restart() {
+      t = 0;
+      compare = null;
+    },
+    setSpeed(v) {
+      if (SPEEDS.includes(v)) speed = v;
+    },
+    cycleSpeed() {
+      speed = SPEEDS[(SPEEDS.indexOf(speed) + 1) % SPEEDS.length];
+    },
+    setLoop(v) {
+      loop = !!v;
+    },
     setCompare(v) {
       compare = v === "before" || v === "after" ? v : null;
       if (compare) pause();
     },
-    setMode(v) { mode = v === "3d" ? "3d" : "2d"; },
-    destroy() { playing = false; stop(); },
+    setMode(v) {
+      mode = v === "3d" ? "3d" : "2d";
+    },
+    /** Ganti penjadwal frame (mis. frame XR saat mode AR). Tanpa argumen = kembali ke rAF jendela. */
+    useScheduler(req, cancel) {
+      const was = playing;
+      stop();
+      schedule = req ?? ((fn) => requestAnimationFrame(fn));
+      unschedule = cancel ?? ((id) => cancelAnimationFrame(id));
+      if (was) {
+        last = performance.now();
+        raf = schedule(tick);
+      }
+    },
+    destroy() {
+      playing = false;
+      stop();
+    },
   };
 }

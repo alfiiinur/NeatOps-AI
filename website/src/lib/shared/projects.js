@@ -11,7 +11,15 @@ function uid() {
 /** Project baru yang kosong (belum ada foto/hasil). */
 export function newProject(name) {
   const now = new Date().toISOString();
-  return { id: uid(), name, createdAt: now, updatedAt: now, photo: null, result: null };
+  return {
+    id: uid(),
+    name,
+    createdAt: now,
+    updatedAt: now,
+    photo: null,
+    result: null,
+    brief: "",
+  };
 }
 
 /** Nama otomatis pertama yang belum dipakai: "Project 1", "Project 2", … */
@@ -29,11 +37,14 @@ export function autoProjectName(items) {
 export function validateProjectName(items, ignoreId, name) {
   const clean = String(name ?? "").trim();
   if (!clean) return { ok: false, error: "Nama project tidak boleh kosong." };
-  if (clean.length > 60) return { ok: false, error: "Nama project maksimal 60 karakter." };
+  if (clean.length > 60)
+    return { ok: false, error: "Nama project maksimal 60 karakter." };
   const clash = (items ?? []).some(
-    (p) => p.id !== ignoreId && p.name.trim().toLowerCase() === clean.toLowerCase(),
+    (p) =>
+      p.id !== ignoreId && p.name.trim().toLowerCase() === clean.toLowerCase(),
   );
-  if (clash) return { ok: false, error: `Nama "${clean}" sudah dipakai project lain.` };
+  if (clash)
+    return { ok: false, error: `Nama "${clean}" sudah dipakai project lain.` };
   return { ok: true, name: clean };
 }
 
@@ -44,7 +55,9 @@ export function loadProjects(storage) {
     let items = raw ? JSON.parse(raw) : null;
     if (!Array.isArray(items)) items = null;
     if (items) {
-      items = items.filter((p) => p && typeof p.id === "string" && typeof p.name === "string");
+      items = items.filter(
+        (p) => p && typeof p.id === "string" && typeof p.name === "string",
+      );
       items = items.map((p) => ({
         id: p.id,
         name: p.name,
@@ -52,6 +65,7 @@ export function loadProjects(storage) {
         updatedAt: p.updatedAt ?? new Date().toISOString(),
         photo: p.photo ?? null,
         result: p.result ?? null,
+        brief: typeof p.brief === "string" ? p.brief : "",
       }));
     }
     if (!items || items.length === 0) items = [newProject("Project 1")];

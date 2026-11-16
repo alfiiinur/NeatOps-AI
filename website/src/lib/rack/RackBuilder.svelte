@@ -1,13 +1,29 @@
 <script>
   import { onMount, tick, untrack } from "svelte";
   import { fileToDataUrl } from "../core/photos.js";
+  import ModelThumb from "./ModelThumb.svelte";
   import { HARDWARE_CATALOG, generateRackLayout, assignU, evaluateLayout, moveSlot, filterHardware } from "./rackSimulator.js";
+  import {
+    MAX_RACKS,
+    planRacks,
+    planBins,
+    rackTitle,
+    keepMeta,
+    addRack,
+    removeRack,
+    moveUnitToRack,
+    qtyFromRacks,
+    summarizeRacks,
+    buildInterRackLinks,
+    combinedShopping,
+  } from "./rackMulti.js";
   import ProjectBar from "../shared/ProjectBar.svelte";
   import RackChat from "./RackChat.svelte";
   import RackThree from "./RackThree.svelte";
   import InstallPlayer from "./InstallPlayer.svelte";
   import DeskBuilder from "./DeskBuilder.svelte";
   import { DEFAULT_DESK, clampDesk } from "./deskSimulator.js";
+  import { deskTitle } from "./deskMulti.js";
   import {
     newRackProject,
     loadRackProjects,
@@ -29,7 +45,20 @@
   let rackName = $state("Rak Server Utama");
   let rackU = $state(12);
   let selectedQty = $state({}); // { hwId: qty }
-  let result = $state(null);
+  // Multi-rak: tiap rak = hasil evaluateLayout + meta { id, nama, peran, autoAdded }.
+  // `result` = rak yang sedang dibuka (tab rak), jadi kode tampilan lama tetap memakai `result`.
+  let racks = $state([]);
+  let activeIdx = $state(0);
+  let showAll = $state(false); // tab Susunan: semua rak berdampingan
+  let planNotes = $state([]); // catatan pembagian otomatis
+  let rackMsg = $state(""); // umpan balik tambah/hapus/pindah unit
+  const result = $derived(racks[activeIdx] ?? null);
+  const sum = $derived(summarizeRacks(racks));
+  const inter = $derived(buildInterRackLinks(racks)); // kabel antar rak (kosong bila satu rak)
+  const shopAll = $derived(combinedShopping(racks, inter.links));
+  function setResult(r) {
+    racks = racks.map((x, i) => (i === activeIdx ? keepMeta(x, r) : x));
+  }
   let resultTab = $state("susunan");
 
   // Mode meja kerja (state terpisah dari rak; dirender oleh DeskBuilder).
@@ -38,7 +67,8 @@
   let deskName = $state("Meja Kerja Utama");
   let deskStep = $state(1);
   let deskQty = $state({});
-  let deskResult = $state(null);
+  let deskResults = $state([]); // multi-meja: [hasil evaluateDeskLayout + { id, nama, peran }]
+  let deskActive = $state(0);
 
   let dragOver = $state(false);
   let fileInput = $state(null);
@@ -52,18 +82,42 @@
     rackU = p.rackU ?? 12;
     selectedQty = { ...(p.selectedQty ?? {}) };
     // Nilai ulang hasil tersimpan: melengkapi field baru (key slot, kapasitas UPS) di data lama.
-    result = p.result?.slots
-      ? { ...evaluateLayout(p.result.rackU, p.result.slots), manual: !!p.result.manual }
-      : null;
-    step = p.step === 3 && !p.result ? 2 : (p.step ?? 1);
+    // Project lama menyimpan satu `result`; project multi-rak menyimpan `racks`.
+    const saved = Array.isArray(p.racks) && p.racks.length ? p.racks : p.result?.slots ? [p.result] : [];
+    racks = saved
+      .filter((r) => r?.slots)
+      .map((r, i) => ({
+        ...evaluateLayout(r.rackU, r.slots),
+        manual: !!r.manual,
+        id: r.id ?? `r${i + 1}`,
+        nama: r.nama ?? rackTitle(i, r.peran ?? "utama"),
+        peran: r.peran ?? "utama",
+        autoAdded: r.autoAdded ?? [],
+      }));
+    activeIdx = Math.min(Math.max(0, p.activeRack ?? 0), Math.max(0, racks.length - 1));
+    showAll = false;
+    planNotes = [];
+    rackMsg = "";
+    step = p.step === 3 && !racks.length ? 2 : (p.step ?? 1);
     resultTab = "susunan";
 
     mode = p.mode === "desk" ? "desk" : "rack";
     desk = clampDesk(p.desk);
     deskName = p.deskName ?? "Meja Kerja Utama";
     deskQty = { ...(p.deskQty ?? {}) };
-    deskResult = p.deskResult?.items ? { ...p.deskResult, desk: clampDesk(p.deskResult.desk) } : null;
-    deskStep = p.deskStep === 3 && !deskResult ? 2 : (p.deskStep ?? 1);
+    // Project lama menyimpan satu `deskResult`; project multi-meja menyimpan `deskResults`.
+    const savedDesks = Array.isArray(p.deskResults) && p.deskResults.length ? p.deskResults : p.deskResult?.items ? [p.deskResult] : [];
+    deskResults = savedDesks
+      .filter((r) => r?.items)
+      .map((r, i) => ({
+        ...r,
+        desk: clampDesk(r.desk),
+        id: r.id ?? `m${i + 1}`,
+        nama: r.nama ?? deskTitle(i),
+        peran: r.peran ?? (i === 0 ? "utama" : "tambahan"),
+      }));
+    deskActive = Math.min(Math.max(0, p.deskActive ?? 0), Math.max(0, deskResults.length - 1));
+    deskStep = p.deskStep === 3 && !deskResults.length ? 2 : (p.deskStep ?? 1);
   }
 
   function persist() {
@@ -81,13 +135,17 @@
       rackName,
       rackU: clampU(rackU),
       selectedQty: $state.snapshot(selectedQty),
-      result: $state.snapshot(result),
+      racks: $state.snapshot(racks),
+      activeRack: activeIdx,
+      result: null,
       mode,
       desk: $state.snapshot(desk),
       deskName,
       deskStep,
       deskQty: $state.snapshot(deskQty),
-      deskResult: $state.snapshot(deskResult),
+      deskResults: $state.snapshot(deskResults),
+      deskActive,
+      deskResult: null,
     };
     if (!ready) return;
     untrack(() => {
@@ -157,15 +215,21 @@
     return Number.isFinite(n) ? Math.max(4, Math.min(48, n)) : 12;
   }
 
-  // Jumlah dibatasi kapasitas rak: menambah hanya boleh selama masih muat.
-  // Mengurangi selalu boleh (termasuk data lama yang sudah kelebihan).
+  // Jumlah dibatasi batas MAX_RACKS rak beserta cara pembagiannya: menambah hanya boleh selama hasilnya
+  // masih muat di ≤ MAX_RACKS rak. Mengurangi selalu boleh (termasuk data lama).
+  const itemsOf = (qtyMap) =>
+    Object.entries(qtyMap)
+      .filter(([, q]) => q > 0)
+      .map(([hwId, qty]) => ({ hwId, qty }));
+  const racksNeeded = (u, qtyMap) => planBins(u, itemsOf(qtyMap)).bins.length;
   function setQty(hwId, val) {
     const hw = HARDWARE_CATALOG.find((h) => h.id === hwId);
     if (!hw) return;
     const cur = selectedQty[hwId] ?? 0;
     const req = Math.max(0, Math.min(10, parseInt(val, 10) || 0));
-    const maxFit = Math.floor((clampU(rackU) - (usedU - cur * hw.unitHeight)) / hw.unitHeight);
-    const n = req <= cur ? req : Math.min(req, Math.max(cur, maxFit));
+    const maxFit = Math.floor((clampU(rackU) * MAX_RACKS - (usedU - cur * hw.unitHeight)) / hw.unitHeight);
+    let n = req <= cur ? req : Math.min(req, Math.max(cur, maxFit));
+    while (n > cur && racksNeeded(clampU(rackU), { ...selectedQty, [hwId]: n }) > MAX_RACKS) n--;
     selectedQty = { ...selectedQty, [hwId]: n };
   }
   const inc = (id) => setQty(id, (selectedQty[id] ?? 0) + 1);
@@ -201,19 +265,25 @@
     picks.filter((p) => !p.hw.tags.includes("ups")).reduce((s, p) => s + p.hw.watt * p.qty, 0),
   );
   const unitCount = $derived(picks.reduce((s, p) => s + p.qty, 0));
-  const capPct = $derived(Math.min(100, Math.round((usedU / clampU(rackU)) * 100)));
-  const capColor = $derived(usedU > clampU(rackU) ? "var(--bad)" : capPct > 80 ? "var(--warn)" : "var(--ok)");
-  const freeU = $derived(clampU(rackU) - usedU);
+  const estRacks = $derived(Math.max(1, racksNeeded(clampU(rackU), selectedQty)));
+  const capPct = $derived(Math.min(100, Math.round((usedU / (clampU(rackU) * estRacks)) * 100)));
+  const capColor = $derived(estRacks > MAX_RACKS ? "var(--bad)" : capPct > 85 ? "var(--warn)" : "var(--ok)");
+  // Sisa kapasitas = semua rak yang boleh dibuat (MAX_RACKS), bukan hanya satu rak.
+  const freeU = $derived(clampU(rackU) * MAX_RACKS - usedU);
   const rackFull = $derived(picks.length > 0 && freeU <= 0);
-  const fits = (hw) => hw.unitHeight <= freeU;
+  const fits = (hw) =>
+    hw.unitHeight <= freeU &&
+    racksNeeded(clampU(rackU), { ...selectedQty, [hw.id]: (selectedQty[hw.id] ?? 0) + 1 }) <= MAX_RACKS;
 
-  // Kapasitas rak tidak boleh di bawah total U hardware yang sudah dipilih.
+  // Rak boleh lebih kecil dari total hardware (dibagi ke beberapa rak), asal tidak lebih dari MAX_RACKS rak.
   let uNote = $state("");
-  const minRackU = $derived(Math.max(4, Math.min(48, usedU)));
+  const minRackU = $derived(Math.max(4, ...picks.map((p) => p.hw.unitHeight)));
   function setRackU(v) {
     const want = clampU(v);
-    rackU = Math.max(want, minRackU);
-    uNote = want < minRackU ? `Kapasitas minimal ${minRackU}U karena hardware yang dipilih sudah ${usedU}U.` : "";
+    let u = Math.max(want, minRackU);
+    while (u < 48 && racksNeeded(u, selectedQty) > MAX_RACKS) u++;
+    rackU = u;
+    uNote = u > want ? `Dengan ${want}U hardware ini butuh lebih dari ${MAX_RACKS} rak, jadi minimal ${u}U.` : "";
   }
 
   const categories = [...new Set(HARDWARE_CATALOG.map((h) => h.kategori))];
@@ -253,16 +323,16 @@
       (s, [id, q]) => s + (HARDWARE_CATALOG.find((h) => h.id === id)?.unitHeight ?? 0) * q,
       0,
     );
-    // Ukuran rak pengguna dipertahankan; dinaikkan hanya kalau paket tidak muat.
+    // Ukuran rak pengguna dipertahankan. Paket yang lebih besar dari satu rak dibagi ke beberapa rak.
     const oldU = clampU(rackU);
-    const bumped = u > oldU;
-    if (bumped) rackU = Math.min(48, u + 2);
     uNote = "";
     selectedQty = { ...p.items };
     if (step !== 2) step = 2;
-    const sizeNote = bumped
-      ? ` Paket butuh ${u}U, jadi kapasitas rak saya naikkan dari ${oldU}U ke ${clampU(rackU)}U.`
-      : ` Total ${u}U dari rak ${oldU}U${u === oldU ? ", rak jadi penuh" : ""}.`;
+    const need = racksNeeded(oldU, p.items);
+    const sizeNote =
+      need > 1
+        ? ` Paket butuh ${u}U, lebih dari satu rak ${oldU}U, jadi akan dibagi ke ${need} rak. Mau satu rak saja? Naikkan kapasitas rak ke ${Math.min(48, u + 2)}U.`
+        : ` Total ${u}U dari rak ${oldU}U${u === oldU ? ", rak jadi penuh" : ""}.`;
     return `${p.label} sudah saya isi: ${names}.${sizeNote} Silakan ubah jumlahnya, lalu klik Generate.`;
   }
 
@@ -284,11 +354,15 @@
       genProgress = (i + 1) / GEN_STEPS.length;
       await new Promise((r) => setTimeout(r, 380));
     }
-    const out = generateRackLayout(
+    const out = planRacks(
       clampU(rackU),
       picks.map((p) => ({ hwId: p.hw.id, qty: p.qty })),
     );
-    result = stripIlu(out);
+    racks = out.racks.map((r) => stripIlu(r));
+    planNotes = out.notes;
+    activeIdx = 0;
+    showAll = false;
+    rackMsg = "";
     resultTab = "susunan";
     step = 3;
     generating = false;
@@ -306,7 +380,10 @@
     step = 1;
     rackPhoto = null;
     selectedQty = {};
-    result = null;
+    racks = [];
+    activeIdx = 0;
+    planNotes = [];
+    rackMsg = "";
     rackU = 12;
     rackName = "Rak Server Utama";
     resultTab = "susunan";
@@ -391,7 +468,7 @@
       const changed = order.some((s, i) => s.key !== result.slots[i]?.key);
       if (changed) {
         const moved = order.find((s) => s.key === dragKey);
-        result = { ...evaluateLayout(result.rackU, assignU(order)), manual: true };
+        setResult({ ...evaluateLayout(result.rackU, assignU(order)), manual: true });
         const now = result.slots.find((s) => s.key === dragKey);
         if (moved && now) moveNote = `${moved.nama} dipindah ke U${now.uStart}.`;
       }
@@ -419,7 +496,7 @@
     const i = result.slots.findIndex((s) => s.key === key);
     const j = i + dir;
     if (i < 0 || j < 0 || j >= result.slots.length) return;
-    result = { ...moveSlot(result, i, j), manual: true };
+    setResult({ ...moveSlot(result, i, j), manual: true });
     const now = result.slots.find((s) => s.key === key);
     if (now) moveNote = `${now.nama} dipindah ke U${now.uStart}.`;
   }
@@ -435,8 +512,70 @@
     const counts = {};
     for (const s of result.slots) if (!s.auto) counts[s.id] = (counts[s.id] ?? 0) + 1;
     const items = Object.entries(counts).map(([hwId, qty]) => ({ hwId, qty }));
-    result = stripIlu(generateRackLayout(result.rackU, items));
+    setResult(stripIlu(generateRackLayout(result.rackU, items)));
     moveNote = "Susunan dikembalikan ke rekomendasi AI.";
+  }
+
+  // ─── Multi-rak: buka / tambah / hapus / pindah unit / susun ulang ──────
+  function openRack(i) {
+    if (dragKey || !racks[i]) return;
+    activeIdx = i;
+    showAll = false;
+    rackMsg = "";
+  }
+
+  function addNewRack() {
+    if (dragKey) return;
+    const r = addRack(racks, result?.rackU ?? clampU(rackU));
+    if (!r.ok) {
+      rackMsg = r.reason;
+      return;
+    }
+    racks = r.racks;
+    activeIdx = r.index;
+    showAll = false;
+    rackMsg = `${racks[activeIdx].nama} ditambahkan. Pindahkan unit ke sini lewat pilihan "Pindah ke rak" di tab Susunan.`;
+    moveNote = rackMsg;
+  }
+
+  function deleteRack(i) {
+    if (dragKey) return;
+    const r = removeRack(racks, i);
+    if (!r.ok) {
+      rackMsg = r.reason;
+      return;
+    }
+    const nama = racks[i].nama;
+    racks = r.racks;
+    activeIdx = Math.min(activeIdx, racks.length - 1);
+    showAll = false;
+    rackMsg = `${nama} dihapus.`;
+    moveNote = rackMsg;
+  }
+
+  function moveToRack(key, toIdx) {
+    if (dragKey || !Number.isInteger(toIdx)) return;
+    const r = moveUnitToRack(racks, activeIdx, key, toIdx);
+    if (!r.ok) {
+      rackMsg = r.reason;
+      moveNote = r.reason;
+      return;
+    }
+    racks = r.racks;
+    rackMsg = `${r.moved.nama} dipindah dari ${r.moved.from} ke ${r.moved.to}.`;
+    moveNote = rackMsg;
+  }
+
+  // Bagi ulang seluruh unit secara otomatis (membuang susunan manual dan perpindahan unit).
+  function replanAll() {
+    if (dragKey || !racks.length) return;
+    const out = planRacks(racks[0].rackU, itemsOf(qtyFromRacks(racks)));
+    racks = out.racks.map((r) => stripIlu(r));
+    planNotes = out.notes;
+    activeIdx = 0;
+    showAll = false;
+    rackMsg = "Semua unit dibagi ulang otomatis.";
+    moveNote = rackMsg;
   }
 
   // Bersihkan listener kalau komponen dilepas di tengah seretan.
@@ -484,7 +623,8 @@
       bind:deskName
       bind:step={deskStep}
       bind:qty={deskQty}
-      bind:result={deskResult}
+      bind:results={deskResults}
+      bind:active={deskActive}
       chatKey={currentId}
     />
   {:else}
@@ -524,6 +664,7 @@
           rackU={clampU(rackU)}
           {usedU}
           {picks}
+          {racks}
           {result}
           {generating}
           onPreset={applyPreset}
@@ -614,9 +755,11 @@
                     {#if uNote}
                       <span class="rb-note warn">{uNote}</span>
                     {:else if rackFull}
-                      <span class="rb-note full">Rak {clampU(rackU)}U sudah penuh. Kurangi hardware atau naikkan kapasitas rak untuk menambah perangkat.</span>
+                      <span class="rb-note full">Sudah mencapai batas {MAX_RACKS} rak × {clampU(rackU)}U. Kurangi hardware atau naikkan kapasitas rak.</span>
+                    {:else if estRacks > 1}
+                      <span class="rb-note">Hardware tidak muat di satu rak {clampU(rackU)}U, jadi akan dibagi ke {estRacks} rak per fungsi (jaringan, server).</span>
                     {:else if picks.length}
-                      <span class="rb-note">Sisa {freeU}U dari {clampU(rackU)}U</span>
+                      <span class="rb-note">Sisa {clampU(rackU) - usedU}U dari {clampU(rackU)}U</span>
                     {/if}
                   </div>
                 </div>
@@ -657,7 +800,7 @@
                     {@const qty = selectedQty[hw.id] ?? 0}
                     <div class="rb-hw-item" id="hw-{hw.id}" class:selected={qty > 0} class:nofit={!fits(hw)} class:flash={flashHwId === hw.id}>
                       <div class="rb-hw-ilu" style="border-left-color:{hw.color}" aria-hidden="true">
-                        {@html hw.ilustrasi}
+                        <ModelThumb hwId={hw.id} svg={hw.ilustrasi} />
                       </div>
                       <div class="rb-hw-info">
                         <div class="rb-hw-name">{hw.nama}</div>
@@ -678,11 +821,11 @@
                             onclick={() => inc(hw.id)}
                             disabled={qty >= 10 || !fits(hw)}
                             aria-label="Tambah {hw.nama}"
-                            title={!fits(hw) ? `Tidak muat: butuh ${hw.unitHeight}U, sisa ${Math.max(0, freeU)}U` : `Tambah ${hw.nama}`}
+                            title={!fits(hw) ? `Tidak muat: sudah di batas ${MAX_RACKS} rak` : `Tambah ${hw.nama}`}
                           >+</button>
                         </div>
                         {#if !fits(hw)}
-                          <span class="rb-nofit-tag">{freeU <= 0 ? "Rak penuh" : `Butuh ${hw.unitHeight}U, sisa ${freeU}U`}</span>
+                          <span class="rb-nofit-tag">{freeU <= 0 ? "Rak penuh" : `Batas ${MAX_RACKS} rak`}</span>
                         {:else if qty >= 10}
                           <span class="rb-nofit-tag">Maks 10 unit</span>
                         {/if}
@@ -709,12 +852,14 @@
 
               <div class="rb-cap">
                 <div class="rb-cap-row">
-                  <span>{usedU} / {clampU(rackU)} U {#if rackFull}<b class="rb-full-badge">PENUH</b>{/if}</span>
+                  <span>{usedU} / {clampU(rackU) * estRacks} U {#if estRacks > 1}<b class="rb-full-badge">{estRacks} RAK</b>{:else if usedU >= clampU(rackU)}<b class="rb-full-badge">PENUH</b>{/if}</span>
                   <span>{loadWatt} W</span>
                 </div>
                 <div class="rb-cap-bar"><i style="width:{capPct}%; background:{capColor}"></i></div>
-                {#if usedU > clampU(rackU)}
-                  <div class="rb-cap-warn">Melebihi kapasitas {usedU - clampU(rackU)}U</div>
+                {#if estRacks > MAX_RACKS}
+                  <div class="rb-cap-warn">Melebihi batas {MAX_RACKS} rak</div>
+                {:else if estRacks > 1}
+                  <div class="rb-cap-note">Dibagi ke {estRacks} rak per fungsi</div>
                 {/if}
               </div>
 
@@ -726,7 +871,7 @@
                     {#each picks as p (p.hw.id)}
                       <li class="rb-pick">
                         <div class="rb-pick-ilu" style="border-left-color:{p.hw.color}" aria-hidden="true">
-                          {@html p.hw.ilustrasi}
+                          <ModelThumb hwId={p.hw.id} svg={p.hw.ilustrasi} />
                         </div>
                         <div class="rb-pick-info">
                           <button class="rb-pick-name rb-pick-jump" onclick={() => jumpToHw(p.hw.id)} title="Lihat di katalog" aria-label="Lihat {p.hw.nama} di katalog">{p.hw.nama}</button>
@@ -772,35 +917,78 @@
             <div>
               <h2 class="rb-result-title">{rackName}</h2>
               <div class="rb-result-meta">
-                <span>{result.rackU}U rak</span>
-                <span>{result.usedU}U terpakai</span>
-                <span>{result.freeU}U kosong</span>
-                <span>{result.totalWatt}W beban</span>
-                {#if result.upsCapacity}<span>UPS {result.upsCapacity}W</span>{/if}
-                <span>{result.totalBerat.toFixed(1)}kg</span>
+                <span>{sum.count > 1 ? `${sum.count} rak × ${result.rackU}U` : `${result.rackU}U rak`}</span>
+                <span>{sum.usedU}U terpakai</span>
+                <span>{sum.freeU}U kosong</span>
+                <span>{sum.totalWatt}W beban</span>
+                {#if sum.upsCapacity}<span>UPS {sum.upsCapacity}W</span>{/if}
+                <span>{sum.totalBerat.toFixed(1)}kg</span>
               </div>
             </div>
             <div class="rb-score">
-              <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label="Skor layout {result.score} dari 100">
+              <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label="Skor layout {sum.score} dari 100">
                 <circle cx="40" cy="40" r="32" fill="none" stroke="var(--panel-2)" stroke-width="8"/>
-                <circle cx="40" cy="40" r="32" fill="none" stroke={scoreColor(result.score)} stroke-width="8" stroke-linecap="round"
-                  stroke-dasharray="{(result.score / 100) * (2 * Math.PI * 32)} {2 * Math.PI * 32}" transform="rotate(-90 40 40)"/>
-                <text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="700" font-family="monospace">{result.score}</text>
+                <circle cx="40" cy="40" r="32" fill="none" stroke={scoreColor(sum.score)} stroke-width="8" stroke-linecap="round"
+                  stroke-dasharray="{(sum.score / 100) * (2 * Math.PI * 32)} {2 * Math.PI * 32}" transform="rotate(-90 40 40)"/>
+                <text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="700" font-family="monospace">{sum.score}</text>
                 <text x="40" y="52" text-anchor="middle" fill="var(--faint)" font-size="9">/100</text>
               </svg>
-              <div class="rb-score-label">Skor layout</div>
+              <div class="rb-score-label">Skor layout{sum.count > 1 ? " (terendah)" : ""}</div>
             </div>
+            {#if sum.cableScore != null}
+              <button class="rb-score rb-score-btn" onclick={() => (resultTab = "kabel")} title="Lihat hasil cek kabel">
+                <svg width="78" height="78" viewBox="0 0 80 80" role="img" aria-label="Skor kabel {sum.cableScore} dari 100">
+                  <circle cx="40" cy="40" r="32" fill="none" stroke="var(--panel-2)" stroke-width="8"/>
+                  <circle cx="40" cy="40" r="32" fill="none" stroke={scoreColor(sum.cableScore)} stroke-width="8" stroke-linecap="round"
+                    stroke-dasharray="{(sum.cableScore / 100) * (2 * Math.PI * 32)} {2 * Math.PI * 32}" transform="rotate(-90 40 40)"/>
+                  <text x="40" y="38" text-anchor="middle" fill="var(--text)" font-size="18" font-weight="700" font-family="monospace">{sum.cableScore}</text>
+                  <text x="40" y="52" text-anchor="middle" fill="var(--faint)" font-size="9">/100</text>
+                </svg>
+                <div class="rb-score-label">Skor kabel{sum.count > 1 ? " (rata-rata)" : ""}</div>
+              </button>
+            {/if}
           </div>
 
-          {#if result.warnings.length || result.tips.length}
+          {#if planNotes.length || rackMsg || sum.warnings.length || sum.tips.length}
             <div class="rb-alerts">
-              {#each result.warnings as w}
-                <div class="rb-alert rb-alert-{w.level}" role="alert">{w.text}</div>
+              {#each planNotes as n}
+                <div class="rb-alert rb-alert-tip">{n}</div>
               {/each}
-              {#each result.tips as t}
-                <div class="rb-alert rb-alert-tip">{t}</div>
+              {#if rackMsg}<div class="rb-alert rb-alert-warn" role="status">{rackMsg}</div>{/if}
+              {#each sum.warnings as w}
+                <div class="rb-alert rb-alert-{w.level}" role="alert">{sum.count > 1 ? `${w.rack}: ` : ""}{w.text}</div>
+              {/each}
+              {#each sum.tips as t}
+                <div class="rb-alert rb-alert-tip">{sum.count > 1 ? `${t.rack}: ` : ""}{t.text}</div>
               {/each}
             </div>
+          {/if}
+
+          <!-- Tab rak: Rak 1 | Rak 2 | Semua rak, tambah/hapus/susun ulang -->
+          <div class="rb-racktabs" role="tablist" aria-label="Daftar rak">
+            {#each racks as r, i (r.id)}
+              <button role="tab" class="rb-racktab" class:active={!showAll && i === activeIdx} aria-selected={!showAll && i === activeIdx} onclick={() => openRack(i)}>
+                <b>{r.nama}</b>
+                <span>{r.usedU}/{r.rackU}U{r.freeU === 0 ? " · penuh" : ""}</span>
+              </button>
+            {/each}
+            {#if racks.length > 1}
+              <button role="tab" class="rb-racktab" class:active={showAll} aria-selected={showAll} onclick={() => { showAll = true; resultTab = "susunan"; }}>
+                <b>Semua rak</b>
+                <span>{sum.count} rak</span>
+              </button>
+            {/if}
+            <span class="rb-racktabs-gap"></span>
+            <button class="btn-small" onclick={addNewRack} disabled={racks.length >= MAX_RACKS || !!dragKey}>+ Tambah rak</button>
+            {#if racks.length > 1 || result.manual}
+              <button class="btn-small btn-ghost" onclick={replanAll} disabled={!!dragKey} title="Bagi ulang semua unit secara otomatis">↺ Susun ulang otomatis</button>
+            {/if}
+            {#if racks.length > 1 && !showAll}
+              <button class="btn-small btn-ghost" onclick={() => deleteRack(activeIdx)} disabled={!!dragKey}>Hapus {result.nama}</button>
+            {/if}
+          </div>
+          {#if result.freeU === 0 && !showAll}
+            <p class="rb-fullhint">{result.nama} sudah penuh. Tambah rak baru lalu pindahkan unit, atau susun ulang otomatis.</p>
           {/if}
 
           <div class="rb-card">
@@ -811,11 +999,36 @@
             </div>
 
             <div class="rb-result-body">
-              {#if resultTab === "susunan"}
+              {#if resultTab === "susunan" && showAll}
+                <div class="rb-allracks">
+                  {#each racks as r, i (r.id)}
+                    <div class="rb-allrack">
+                      <button class="rb-allrack-head" onclick={() => openRack(i)} title="Buka {r.nama}">
+                        <b>{r.nama}</b>
+                        <span>{r.usedU}/{r.rackU}U · {r.totalWatt}W · skor {r.score}</span>
+                      </button>
+                      <div class="rb-rack-frame">
+                        <div class="rb-rack-inner">
+                          {#each r.slots as slot (slot.key)}
+                            <div class="rb-slot rb-slot-static" style={slotStyle(slot)}>
+                              <span class="rb-slot-u">U{slot.uStart}</span>
+                              <div class="rb-slot-content">
+                                {#if !slot.auto}<span class="rb-slot-name">{slot.nama}</span>{:else}<span class="rb-slot-blank">kosong</span>{/if}
+                              </div>
+                            </div>
+                          {/each}
+                        </div>
+                        <div class="rb-rail l"></div>
+                        <div class="rb-rail r"></div>
+                      </div>
+                    </div>
+                  {/each}
+                </div>
+              {:else if resultTab === "susunan"}
                 <div class="rb-two-col">
                   <div>
                     <div class="rb-rack-label">
-                      <span>Tampak depan, {result.rackU}U</span>
+                      <span>{racks.length > 1 ? result.nama + " · " : ""}Tampak depan, {result.rackU}U</span>
                       {#if result.manual}
                         <button class="btn-small btn-ghost rb-reset-layout" onclick={resetLayout}>↺ Susunan AI</button>
                       {/if}
@@ -872,7 +1085,7 @@
                         <div class="rb-slot-card-u" style="background:{SLOT_COLORS[slot.tipe]?.border ?? '#555'}22; border-color:{SLOT_COLORS[slot.tipe]?.border ?? '#555'}">
                           U{slot.uStart}{slot.uEnd > slot.uStart ? "–" + slot.uEnd : ""}
                         </div>
-                        <div class="rb-slot-ilu" aria-hidden="true">{@html ilustrasiOf(slot.id)}</div>
+                        <div class="rb-slot-ilu" aria-hidden="true"><ModelThumb hwId={slot.id} svg={ilustrasiOf(slot.id)} /></div>
                         <div class="rb-slot-card-info">
                           <div class="rb-slot-card-name">{slot.nama}</div>
                           <div class="rb-slot-card-brand" style="color:{slot.color}">{slot.merek}</div>
@@ -881,6 +1094,14 @@
                             {#if slot.watt > 0}<span>{slot.watt}W</span>{/if}
                             <span>{slot.beratKg}kg</span>
                           </div>
+                          {#if racks.length > 1}
+                            <select class="rb-moveto" aria-label="Pindahkan {slot.nama} ke rak lain" onchange={(e) => { moveToRack(slot.key, parseInt(e.currentTarget.value, 10)); e.currentTarget.value = ""; }}>
+                              <option value="">Pindah ke rak…</option>
+                              {#each racks as r, i}
+                                {#if i !== activeIdx}<option value={i} disabled={r.freeU < slot.unitHeight}>{r.nama} (sisa {r.freeU}U)</option>{/if}
+                              {/each}
+                            </select>
+                          {/if}
                         </div>
                       </div>
                     {/each}
@@ -889,15 +1110,114 @@
               {:else if resultTab === "3d"}
                 <div class="rb-iso-tab">
                   <div class="rb-rack-label">
-                    <span>Tampilan 3D, {result.rackU}U</span>
+                    <span>{racks.length > 1 ? result.nama + " · " : ""}Tampilan 3D, {result.rackU}U</span>
                   </div>
-                  <RackThree slots={isoSlots} rackU={result.rackU} onNudge={(key, dir) => nudge(key, dir)} />
+                  {#key result.id}
+                    <RackThree slots={isoSlots} rackU={result.rackU} onNudge={(key, dir) => nudge(key, dir)} />
+                  {/key}
                 </div>
               {:else if resultTab === "kabel"}
                 <div class="rb-cable">
+                  {#if racks.length > 1}
+                    <section class="rb-interrack">
+                      <h3>Kabel antar rak · {inter.links.length}</h3>
+                      {#if inter.notes[0]}<p class="rb-cables-note">{inter.notes[0]}</p>{/if}
+                      {#each inter.links as l (l.id)}
+                        <div class="rb-route">
+                          <span class="rb-route-swatch" style="background:{l.warna}"></span>
+                          <div>
+                            <div class="rb-route-label">{l.label}</div>
+                            <div class="rb-route-sub">Kabel: {l.kabel}</div>
+                            <div class="rb-route-sub">Jalur: {l.jalur}</div>
+                          </div>
+                        </div>
+                      {/each}
+                      <h4>Belanja kabel gabungan · {sum.count} rak</h4>
+                      {#each shopAll as item}
+                        <div class="rb-shop">
+                          <span class="rb-shop-dot" style="background:{item.warna}"></span>
+                          <div class="rb-shop-info"><b>{item.nama}</b><span>{item.ket}</span></div>
+                          <span class="rb-shop-qty">×{item.qty}</span>
+                        </div>
+                      {/each}
+                      <p class="rb-cables-note">Rincian kabel di bawah untuk {result.nama}. Pilih rak lain di tab atas untuk melihat rak itu.</p>
+                    </section>
+                  {/if}
+                  {#if result.cableIssues}
+                    <section class="rb-audit">
+                      <h3>Cek kerapian &amp; keamanan kabel · skor {result.cableScore}/100</h3>
+                      {#if result.cableSummary}
+                        <p class="rb-cables-note">
+                          {result.cableSummary.total} kabel: {result.cableSummary.ok} aman,
+                          {result.cableSummary.warn} peringatan, {result.cableSummary.critical} kritis.
+                          Buka tab Tampilan 3D lalu klik "Cek keamanan" untuk melihat posisinya di rak.
+                        </p>
+                      {/if}
+                      {#if result.cableIssues.length}
+                        {#each result.cableIssues as is (is.id)}
+                          <div class="rb-issue rb-issue-{is.level}">
+                            <div class="rb-issue-head">
+                              <em>{({ critical: "Kritis", warn: "Peringatan", info: "Catatan" })[is.level]}</em>
+                              <b>{is.judul}</b>
+                            </div>
+                            <div class="rb-issue-detail">{is.detail}</div>
+                            <div class="rb-issue-fix">Saran: {is.saran}</div>
+                          </div>
+                        {/each}
+                      {:else}
+                        <div class="rb-issue rb-issue-ok"><b>Semua kabel lolos pemeriksaan kerapian &amp; keamanan.</b></div>
+                      {/if}
+                    </section>
+                  {/if}
+                  {#if result.cables?.length}
+                    <section class="rb-cables">
+                      <h3>Daftar kabel per sambungan · {result.cables.length}</h3>
+                      <p class="rb-cables-note">
+                        Port depan (switch, patch panel, ODF) dikabel dari depan; daya, NIC server, dan KVM dari belakang.
+                        Daya lewat kanal kiri, data &amp; fiber lewat kanal kanan. Panjang dihitung dari jalur di rak.
+                      </p>
+                      {#each [["power", "Daya"], ["data", "Data"], ["fiber", "Fiber optik"]] as [lane, judul]}
+                        {@const list = result.cables.filter((c) => c.lane === lane)}
+                        {#if list.length}
+                          <h4>{judul} · {list.length}</h4>
+                          <div class="rb-cab-table" role="table" aria-label="Kabel {judul}">
+                            <div class="rb-cab-row rb-cab-headrow" role="row">
+                              <span role="columnheader">Fungsi</span>
+                              <span role="columnheader">Dari → Ke</span>
+                              <span role="columnheader">Jenis</span>
+                              <span role="columnheader">Panjang</span>
+                              <span role="columnheader">Sisi</span>
+                            </div>
+                            {#each list as c (c.id)}
+                              <div class="rb-cab-row rb-cab-{c.status ?? 'ok'}" role="row">
+                                <span role="cell">
+                                  <i style="background:{c.color}" aria-hidden="true"></i>{c.fungsi}
+                                  {#if c.status === "critical" || c.status === "warn"}
+                                    <small class="rb-cab-flag">{c.status === "critical" ? "Kritis" : "Peringatan"}</small>
+                                  {/if}
+                                </span>
+                                <span role="cell" class="rb-cab-path">{c.dari}<b>→</b>{c.ke}</span>
+                                <span role="cell">{c.kindNama}</span>
+                                <span role="cell" class="rb-cab-len">
+                                  {#if c.stdM != null}{String(c.stdM).replace(".", ",")} m<em>jalur ±{String(c.lengthM).replace(".", ",")} m</em>{:else}diukur di lokasi{/if}
+                                </span>
+                                <span role="cell">{c.side}</span>
+                              </div>
+                            {/each}
+                          </div>
+                        {/if}
+                      {/each}
+                      {#if result.cableUnconnected?.length}
+                        <div class="rb-cab-warn">
+                          <b>Port belum tersambung ({result.cableUnconnected.length}):</b>
+                          {#each result.cableUnconnected as u}<div>{u.nama} · {u.port}: {u.alasan}</div>{/each}
+                        </div>
+                      {/if}
+                    </section>
+                  {/if}
                   {#if result.cableRoutes.length}
                     <section>
-                      <h3>Rute kabel</h3>
+                      <h3>Rute utama</h3>
                       {#each result.cableRoutes as r}
                         <div class="rb-route">
                           <span class="rb-route-swatch" style="background:{r.warna}"></span>
@@ -931,7 +1251,11 @@
                   </section>
                 </div>
               {:else}
-                <InstallPlayer {result} />
+                {#if racks.length > 1}
+                  <InstallPlayer result={{ racks, links: inter.links }} kind="racks" />
+                {:else}
+                  <InstallPlayer {result} />
+                {/if}
               {/if}
             </div>
           </div>
@@ -1188,6 +1512,9 @@
     background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 5px; padding: 2px 9px;
   }
   .rb-score { text-align: center; }
+  .rb-result-head > div:first-child { flex: 1; min-width: 0; }
+  .rb-score-btn { border: none; background: transparent; padding: 0; cursor: pointer; color: inherit; font: inherit; border-radius: 10px; }
+  .rb-score-btn:hover .rb-score-label { color: var(--amber); text-decoration: underline; }
   .rb-score-label { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 
   .rb-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
@@ -1256,6 +1583,54 @@
 
   .rb-cable { display: flex; flex-direction: column; gap: 20px; }
   .rb-cable h3 { margin: 0 0 10px; font-size: 14.5px; }
+  .rb-cables-note { margin: -4px 0 10px; font-size: 12.5px; color: var(--muted); }
+  .rb-issue {
+    --st: var(--faint);
+    border: 1px solid var(--line-soft); border-left: 4px solid var(--st); border-radius: 8px;
+    padding: 9px 12px; margin-bottom: 8px; background: color-mix(in srgb, var(--st) 7%, var(--panel));
+    font-size: 12.5px;
+  }
+  .rb-issue-critical { --st: var(--bad); }
+  .rb-issue-warn { --st: var(--warn); }
+  .rb-issue-info { --st: var(--faint); }
+  .rb-issue-ok { --st: var(--ok); }
+  .rb-issue-head { display: flex; gap: 8px; align-items: baseline; margin-bottom: 3px; }
+  .rb-issue-head em {
+    font-style: normal; font-family: var(--mono); font-size: 10.5px; font-weight: 700; text-transform: uppercase;
+    color: var(--st); letter-spacing: 0.04em; flex: none;
+  }
+  .rb-issue-detail { color: var(--muted); }
+  .rb-issue-fix { margin-top: 3px; font-weight: 600; }
+  .rb-cab-critical { background: color-mix(in srgb, var(--bad) 8%, transparent); }
+  .rb-cab-warn { background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .rb-cab-flag {
+    display: inline-block; margin-left: 6px; padding: 0 6px; border-radius: 999px; font-size: 10.5px; font-weight: 700;
+    color: #fff; background: var(--warn);
+  }
+  .rb-cab-critical .rb-cab-flag { background: var(--bad); }
+  .rb-cables h4 { margin: 14px 0 6px; font-size: 13px; }
+  .rb-cab-table { border: 1px solid var(--line-soft); border-radius: 8px; overflow: hidden; max-height: 360px; overflow-y: auto; }
+  .rb-cab-row {
+    display: grid; grid-template-columns: minmax(130px, 1.1fr) minmax(220px, 2.4fr) minmax(120px, 1.2fr) 92px 112px;
+    gap: 10px; padding: 7px 10px; font-size: 12.5px; border-top: 1px solid var(--line-soft); align-items: baseline;
+  }
+  .rb-cab-row:first-child { border-top: none; }
+  .rb-cab-headrow {
+    position: sticky; top: 0; background: var(--panel-2); font-family: var(--mono); font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted);
+  }
+  .rb-cab-row i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 6px; vertical-align: -1px; }
+  .rb-cab-path b { color: var(--faint); font-weight: 400; margin: 0 5px; }
+  .rb-cab-len { font-family: var(--mono); }
+  .rb-cab-len em { display: block; font-style: normal; font-size: 10.5px; color: var(--faint); }
+  .rb-cab-warn {
+    margin-top: 10px; padding: 9px 12px; border-radius: 8px; font-size: 12.5px;
+    background: color-mix(in srgb, var(--bad) 10%, var(--panel)); border: 1px solid color-mix(in srgb, var(--bad) 35%, transparent);
+  }
+  @media (max-width: 760px) {
+    .rb-cab-row { grid-template-columns: 1fr 1fr; }
+    .rb-cab-headrow { display: none; }
+  }
   .rb-route {
     display: flex; gap: 12px; margin-bottom: 8px;
     background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 10px 12px;
@@ -1278,4 +1653,25 @@
     background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 9px 12px;
   }
   .rb-principles i { width: 10px; height: 10px; border-radius: 50%; flex: none; }
+  /* ── Multi-rak ── */
+  .rb-racktabs { display: flex; align-items: stretch; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .rb-racktab { display: inline-flex; flex-direction: column; align-items: flex-start; gap: 1px; border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 8px; padding: 6px 12px; cursor: pointer; font: inherit; text-align: left; }
+  .rb-racktab b { font-size: 13px; }
+  .rb-racktab span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .rb-racktab:hover { border-color: var(--faint); }
+  .rb-racktab.active { background: var(--lime); border-color: var(--lime-edge); color: var(--on-lime); }
+  .rb-racktab.active span { color: inherit; opacity: 0.8; }
+  .rb-racktab:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+  .rb-racktabs-gap { flex: 1; }
+  .rb-racktabs > .btn-small { align-self: center; }
+  .rb-fullhint { margin: -4px 0 10px; font-size: 12.5px; color: var(--warn); }
+  .rb-cap-note { margin-top: 6px; font-size: 12px; color: var(--muted); }
+  .rb-allracks { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; align-items: start; }
+  .rb-allrack-head { display: flex; flex-direction: column; align-items: flex-start; width: 100%; margin-bottom: 6px; border: 1px solid var(--line-soft); background: var(--bg-soft); color: var(--text); border-radius: 8px; padding: 6px 10px; cursor: pointer; font: inherit; text-align: left; }
+  .rb-allrack-head b { font-size: 13px; }
+  .rb-allrack-head span { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .rb-allrack-head:hover { border-color: var(--lime-edge); }
+  .rb-slot-static { cursor: default; }
+  .rb-interrack { border: 1px solid var(--line-soft); border-radius: 10px; padding: 12px 14px; background: var(--bg-soft); }
+  .rb-moveto { margin-top: 6px; font: inherit; font-size: 12px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-soft); color: var(--text); max-width: 100%; }
 </style>

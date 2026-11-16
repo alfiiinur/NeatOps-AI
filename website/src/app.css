@@ -30,12 +30,47 @@
 }
 
 /* ---------- Tema warna (aksen) ---------- */
-[data-theme="olive"] { --amber: #5f7d10; --amber-dim: #a9bd6a; --lime: #c9ee5b; --lime-edge: #9fc12f; }
-[data-theme="blue"] { --amber: #1f6fb2; --amber-dim: #8dbbe0; --lime: #a8d2f5; --lime-edge: #5da3dc; --on-lime: #0d2a44; }
-[data-theme="teal"] { --amber: #0f7a6b; --amber-dim: #86c4ba; --lime: #9fe0d3; --lime-edge: #4fb8a7; --on-lime: #0a2f29; }
-[data-theme="purple"] { --amber: #7a46b5; --amber-dim: #bb9ddb; --lime: #d7bff2; --lime-edge: #a67bd6; --on-lime: #2d1648; }
-[data-theme="rose"] { --amber: #a8325e; --amber-dim: #d9899f; --lime: #f3b9cd; --lime-edge: #d9798f; --on-lime: #4a0f26; }
-[data-theme="orange"] { --amber: #b4531b; --amber-dim: #e0a77f; --lime: #f6c9a3; --lime-edge: #e0955f; --on-lime: #4a2108; }
+[data-theme="olive"] {
+  --amber: #5f7d10;
+  --amber-dim: #a9bd6a;
+  --lime: #c9ee5b;
+  --lime-edge: #9fc12f;
+}
+[data-theme="blue"] {
+  --amber: #1f6fb2;
+  --amber-dim: #8dbbe0;
+  --lime: #a8d2f5;
+  --lime-edge: #5da3dc;
+  --on-lime: #0d2a44;
+}
+[data-theme="teal"] {
+  --amber: #0f7a6b;
+  --amber-dim: #86c4ba;
+  --lime: #9fe0d3;
+  --lime-edge: #4fb8a7;
+  --on-lime: #0a2f29;
+}
+[data-theme="purple"] {
+  --amber: #7a46b5;
+  --amber-dim: #bb9ddb;
+  --lime: #d7bff2;
+  --lime-edge: #a67bd6;
+  --on-lime: #2d1648;
+}
+[data-theme="rose"] {
+  --amber: #a8325e;
+  --amber-dim: #d9899f;
+  --lime: #f3b9cd;
+  --lime-edge: #d9798f;
+  --on-lime: #4a0f26;
+}
+[data-theme="orange"] {
+  --amber: #b4531b;
+  --amber-dim: #e0a77f;
+  --lime: #f6c9a3;
+  --lime-edge: #e0955f;
+  --on-lime: #4a2108;
+}
 
 /* ---------- Mode gelap ---------- */
 [data-mode="dark"] {
@@ -55,12 +90,30 @@
   --bad: #ef5b61;
   color-scheme: dark;
 }
-[data-mode="dark"][data-theme="olive"] { --amber: #b6d84a; --amber-dim: #5d7524; }
-[data-mode="dark"][data-theme="blue"] { --amber: #6fb0ea; --amber-dim: #2f6fa3; }
-[data-mode="dark"][data-theme="teal"] { --amber: #4fc9b5; --amber-dim: #1f7a6c; }
-[data-mode="dark"][data-theme="purple"] { --amber: #b48ae6; --amber-dim: #5b3a88; }
-[data-mode="dark"][data-theme="rose"] { --amber: #ec7aa0; --amber-dim: #7d2a4a; }
-[data-mode="dark"][data-theme="orange"] { --amber: #f0975c; --amber-dim: #8a4a20; }
+[data-mode="dark"][data-theme="olive"] {
+  --amber: #b6d84a;
+  --amber-dim: #5d7524;
+}
+[data-mode="dark"][data-theme="blue"] {
+  --amber: #6fb0ea;
+  --amber-dim: #2f6fa3;
+}
+[data-mode="dark"][data-theme="teal"] {
+  --amber: #4fc9b5;
+  --amber-dim: #1f7a6c;
+}
+[data-mode="dark"][data-theme="purple"] {
+  --amber: #b48ae6;
+  --amber-dim: #5b3a88;
+}
+[data-mode="dark"][data-theme="rose"] {
+  --amber: #ec7aa0;
+  --amber-dim: #7d2a4a;
+}
+[data-mode="dark"][data-theme="orange"] {
+  --amber: #f0975c;
+  --amber-dim: #8a4a20;
+}
 
 * {
   box-sizing: border-box;
@@ -1387,3 +1440,14 @@ canvas {
   }
 }
 
+/* ---------- Catatan tujuan dari landing ---------- */
+.brief-note {
+  padding: 10px 14px;
+  margin-bottom: 12px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.brief-note b {
+  color: var(--amber);
+}

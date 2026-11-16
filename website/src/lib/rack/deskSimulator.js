@@ -4,6 +4,7 @@
 // (arah pengguna). z = ketinggian dasar item dari permukaan meja (untuk tumpukan).
 
 import { HARDWARE_CATALOG } from "./rackSimulator.js";
+import { isKeyboardId, isPcId, isAioId } from "./hardwareModels.js";
 
 export const DESK_PRESETS = [
   { id: "120x60", label: "120 × 60 cm", w: 120, d: 60 },
@@ -185,11 +186,9 @@ export function generateDeskLayout(deskIn, qtyMap) {
   );
 
   // Baris depan: keyboard di tengah, mouse di kanannya, laptop di kiri.
-  const kbs = fronts.filter((i) => i.id === "keyboard-usb");
+  const kbs = fronts.filter((i) => isKeyboardId(i.id));
   const mice = fronts.filter((i) => i.id === "mouse");
-  const others = fronts.filter(
-    (i) => i.id !== "keyboard-usb" && i.id !== "mouse",
-  );
+  const others = fronts.filter((i) => !isKeyboardId(i.id) && i.id !== "mouse");
   const frontMaxD = Math.max(0, ...fronts.map((i) => i.d));
   // Sisakan jarak telapak tangan ±8 cm di depan keyboard.
   const yFront = Math.max(
@@ -321,10 +320,10 @@ export function evaluateDeskLayout(deskIn, itemsIn) {
   }
 
   const hasDisplay = items.some(
-    (i) => i.id?.startsWith("monitor") || i.id === "laptop",
+    (i) => i.id?.startsWith("monitor") || i.id === "laptop" || isAioId(i.id),
   );
-  const hasPc = items.some((i) => i.id === "pc-tower" || i.id === "laptop");
-  const keyboards = items.filter((i) => i.id === "keyboard-usb");
+  const hasPc = items.some((i) => isPcId(i.id) || i.id === "laptop");
+  const keyboards = items.filter((i) => isKeyboardId(i.id));
   if (items.length && !hasDisplay)
     warnings.push({
       level: "warn",
@@ -360,7 +359,7 @@ export function evaluateDeskLayout(deskIn, itemsIn) {
       text: "Area depan keyboard terhalang atau terlalu dekat tepi meja. Sisakan ±10 cm untuk telapak tangan.",
     });
 
-  if (items.some((i) => i.id === "pc-tower") && powered >= 3) {
+  if (items.some((i) => isPcId(i.id)) && powered >= 3) {
     tips.push(
       "Rapikan kabel dengan cable tray atau velcro di bawah meja, dan label kabel di kedua ujung.",
     );

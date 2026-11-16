@@ -22,6 +22,7 @@ export function deskBoxes(result) {
     nama: it.nama,
     color: it.color,
     problem: !!it.problem,
+    rot: it.rot ?? 0,
     size: [cmToScene(it.w), cmToScene(it.h), cmToScene(it.d)],
     pos: [
       cmToScene(it.x + it.w / 2 - desk.w / 2),

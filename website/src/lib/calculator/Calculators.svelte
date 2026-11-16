@@ -15,9 +15,20 @@
     calcFoLinkBudget,
     FO_SPLITTER_TABLE,
     FO_FIBER_PRESETS,
-    formatID,
-    formatRp,
+    formatID as formatIDBase,
+    formatRp as formatRpBase,
   } from "./calculators.js";
+  import { prefs } from "../core/prefs.svelte.js";
+
+  // Angka mengikuti bahasa: 1.234,56 (Indonesia) atau 1,234.56 (Inggris).
+  const formatID = (n, digits = 2) =>
+    prefs.lang === "en" && Number.isFinite(n)
+      ? new Intl.NumberFormat("en-US", { maximumFractionDigits: digits }).format(n)
+      : formatIDBase(n, digits);
+  const formatRp = (n) =>
+    prefs.lang === "en" && Number.isFinite(n)
+      ? "Rp" + new Intl.NumberFormat("en-US", { maximumFractionDigits: 0 }).format(Math.round(n))
+      : formatRpBase(n);
 
   const groups = [
     {

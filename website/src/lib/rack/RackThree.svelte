@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { createRackScene } from "./rackThreeScene.js";
   import RackIso from "./RackIso.svelte";
+  import ArLauncher from "./ArLauncher.svelte";
 
   let { slots, rackU, onNudge = () => {}, readonly = false, compact = false } = $props();
 
@@ -15,6 +16,63 @@
   let auto = $state(false);
   let showCables = $state(true);
   let showLabels = $state(true);
+  let lanes = $state({ data: true, power: true, fiber: true });
+  let xray = $state(false);
+  let cables = $state([]); // kabel per sambungan dari scene (rackCabling.js)
+  let selectedCableId = $state(null);
+  // Cek kerapian & keamanan kabel (rackCableAudit.js), dihitung scene dari susunan yang tampil.
+  let audit = $state({ issues: [], score: 100, summary: null });
+  let auditOn = $state(false);
+  let focusIssueId = $state(null);
+  const LEVEL_LABEL = { critical: "Kritis", warn: "Peringatan", info: "Catatan", ok: "Aman" };
+  const unitIssues = $derived(
+    selectedKey
+      ? audit.issues.filter(
+          (i) =>
+            i.keys.includes(selectedKey) ||
+            i.cableIds.some((id) => unitCables.some((c) => c.id === id)),
+        )
+      : [],
+  );
+  const cableIssues = $derived(selectedCableId ? audit.issues.filter((i) => i.cableIds.includes(selectedCableId)) : []);
+  const auditTone = $derived(audit.score >= 85 ? "ok" : audit.score >= 60 ? "warn" : "bad");
+
+  function focusIssue(is) {
+    if (focusIssueId === is.id) {
+      focusIssueId = null;
+      scene?.focusCables(null);
+      return;
+    }
+    focusIssueId = is.id;
+    selectedCableId = null;
+    if (is.cableIds.length) {
+      selectedKey = null;
+      scene?.focusCables(is.cableIds);
+    } else if (is.keys.length) {
+      scene?.focusCables(null);
+      selectedKey = is.keys[0];
+    }
+  }
+  const LANE_LABEL = { data: "Data", power: "Daya", fiber: "Fiber" };
+  const selCable = $derived(cables.find((c) => c.id === selectedCableId) ?? null);
+  const unitCables = $derived(selectedKey ? cables.filter((c) => c.aKey === selectedKey || c.bKey === selectedKey) : []);
+  const laneCount = $derived(
+    cables.reduce((m, c) => ((m[c.lane] = (m[c.lane] ?? 0) + 1), m), {}),
+  );
+  const fmtM = (m) => (m == null ? "-" : `${String(m).replace(".", ",")} m`);
+
+  function pickCable(id) {
+    selectedCableId = id;
+    if (id) {
+      selectedKey = null;
+      focusIssueId = null;
+    }
+    scene?.selectCable(id);
+  }
+  function toggleLane(l) {
+    lanes = { ...lanes, [l]: !lanes[l] };
+    if (!showCables) showCables = true;
+  }
   // Mode compact: kontrol disembunyikan di balik tombol hamburger supaya tidak menumpuk.
   let menuOpen = $state(false);
 
@@ -30,6 +88,7 @@
   }
 
   function select(key) {
+    if (key && selectedCableId) pickCable(null);
     selectedKey = key;
   }
 
@@ -41,6 +100,7 @@
 
   function resetAll() {
     selectedKey = null;
+    pickCable(null);
     view = "perspektif";
     scene?.reset();
   }
@@ -51,6 +111,16 @@
         slots,
         onSelect: (key) => {
           selectedKey = key;
+        },
+        onSelectCable: (id) => {
+          selectedCableId = id;
+          if (id) selectedKey = null;
+        },
+        onCables: (list, a) => {
+          cables = list;
+          if (a) audit = a;
+          focusIssueId = null;
+          if (selectedCableId && !list.some((c) => c.id === selectedCableId)) selectedCableId = null;
         },
         onUserOrbit: () => {
           view = null;
@@ -101,6 +171,25 @@
   $effect(() => {
     const v = showLabels;
     untrack(() => scene?.setLabels(v));
+  });
+
+  $effect(() => {
+    const v = lanes;
+    untrack(() => scene?.setLanes(v));
+  });
+
+  $effect(() => {
+    const v = xray;
+    untrack(() => scene?.setXray(v));
+  });
+
+  $effect(() => {
+    const v = auditOn;
+    untrack(() => {
+      if (!v) focusIssueId = null;
+      if (v && !showCables) showCables = true;
+      scene?.setAudit(v);
+    });
   });
 </script>
 
@@ -169,11 +258,86 @@
             <div><span>Tinggi</span><b>{selected.unitHeight}U (±{(selected.unitHeight * 4.445).toFixed(1).replace(".", ",")} cm)</b></div>
             <div><span>Fungsi</span><b>{selected.auto ? "Menutup slot kosong untuk aliran udara." : selected.desc}</b></div>
           </div>
+          {#each unitIssues as is (is.id)}
+            <div class="rt-cab-issue rt-st-{is.level}"><b>{is.judul}</b><span>{is.saran}</span></div>
+          {/each}
+          {#if unitCables.length}
+            <div class="rt-ucab">
+              <div class="rt-ucab-head">Kabel tersambung · {unitCables.length}</div>
+              <ul>
+                {#each unitCables.slice(0, 8) as c (c.id)}
+                  <li>
+                    <button onclick={() => pickCable(c.id)} title="Lihat detail kabel">
+                      <i style="background:{c.color}" aria-hidden="true"></i>
+                      <span>{c.fungsi}</span>
+                      <em>{c.stdM != null ? fmtM(c.stdM) : "keluar rak"}</em>
+                    </button>
+                  </li>
+                {/each}
+              </ul>
+              {#if unitCables.length > 8}<div class="rt-ucab-more">+{unitCables.length - 8} kabel lain</div>{/if}
+            </div>
+          {/if}
           {#if !selected.auto && !readonly}
             <div class="rt-move">
               <button disabled={selIdx <= 0} onclick={() => onNudge(selectedKey, -1)} aria-label="Naikkan {selected.nama}">↑ Naik 1U</button>
               <button disabled={selIdx >= slots.length - 1} onclick={() => onNudge(selectedKey, 1)} aria-label="Turunkan {selected.nama}">↓ Turun 1U</button>
             </div>
+          {/if}
+        </div>
+      {/if}
+      {#if selCable && !selected}
+        <div class="rt-detail" role="dialog" aria-label="Detail kabel {selCable.label}">
+          <button class="rt-x" onclick={() => pickCable(null)} aria-label="Tutup detail kabel">✕</button>
+          <h4><i class="rt-cab-sw" style="background:{selCable.color}" aria-hidden="true"></i>{selCable.fungsi}</h4>
+          <div class="rt-brand" style="color:{selCable.color}">{selCable.kindNama} · {selCable.warnaLabel}</div>
+          <div class="rt-cab-status rt-st-{selCable.status ?? 'ok'}">
+            {LEVEL_LABEL[selCable.status ?? "ok"]}{#if !cableIssues.length} · tidak ada temuan{/if}
+          </div>
+          {#each cableIssues as is (is.id)}
+            <div class="rt-cab-issue rt-st-{is.level}"><b>{is.judul}</b><span>{is.saran}</span></div>
+          {/each}
+          <div class="rt-rows">
+            <div><span>Dari</span><b>{selCable.dari}</b></div>
+            <div><span>Ke</span><b>{selCable.ke}</b></div>
+            <div><span>Jalur</span><b>{LANE_LABEL[selCable.lane]} · sisi {selCable.side}</b></div>
+            <div><span>Panjang jalur</span><b>±{fmtM(selCable.lengthM)}</b></div>
+            <div>
+              <span>Kabel dipakai</span>
+              <b>{selCable.stdM != null ? `${fmtM(selCable.stdM)} (sisa ${fmtM(selCable.slackM)})` : "Keluar rak, panjang diukur di lokasi"}</b>
+            </div>
+          </div>
+          <div class="rt-cab-units">
+            <button onclick={() => select(selCable.aKey)}>Lihat ujung A</button>
+            {#if selCable.bKey}<button onclick={() => select(selCable.bKey)}>Lihat ujung B</button>{/if}
+          </div>
+        </div>
+      {/if}
+      {#if auditOn && !(compact && menuOpen)}
+        <div class="rt-audit" class:compact role="region" aria-label="Hasil cek keamanan kabel">
+          <div class="rt-audit-head">
+            <span class="rt-audit-score rt-tone-{auditTone}">{audit.score}</span>
+            <div>
+              <b>Skor kabel</b>
+              {#if audit.summary}
+                <span>{audit.summary.critical} kritis · {audit.summary.warn} peringatan · {audit.summary.ok} aman</span>
+              {/if}
+            </div>
+          </div>
+          {#if audit.issues.length}
+            <ul>
+              {#each audit.issues as is (is.id)}
+                <li>
+                  <button class="rt-st-{is.level}" class:on={focusIssueId === is.id} onclick={() => focusIssue(is)}>
+                    <em>{LEVEL_LABEL[is.level]}</em>
+                    <b>{is.judul}</b>
+                    {#if focusIssueId === is.id}<span>{is.detail}</span><span class="rt-audit-fix">Saran: {is.saran}</span>{/if}
+                  </button>
+                </li>
+              {/each}
+            </ul>
+          {:else}
+            <p class="rt-audit-ok">Semua kabel lolos pemeriksaan kerapian &amp; keamanan.</p>
           {/if}
         </div>
       {/if}
@@ -195,13 +359,35 @@
       <div class="rt-bar" id="rt-bar" role="toolbar" aria-label="Kontrol tampilan 3D">
         <button class:active={view === "perspektif"} onclick={() => goView("perspektif")}>Perspektif</button>
         <button class:active={view === "depan"} onclick={() => goView("depan")}>Depan</button>
+        <button class:active={view === "belakang"} onclick={() => goView("belakang")}>Belakang</button>
         <button class:active={view === "samping"} onclick={() => goView("samping")}>Samping</button>
         <button class:active={view === "atas"} onclick={() => goView("atas")}>Atas</button>
         <span class="rt-sep" aria-hidden="true"></span>
         <button class:active={auto} aria-pressed={auto} onclick={() => (auto = !auto)}>Putar otomatis</button>
-        <button class:active={showCables} aria-pressed={showCables} onclick={() => (showCables = !showCables)}>Kabel</button>
+        <button class:active={showCables} aria-pressed={showCables} onclick={() => (showCables = !showCables)}>Kabel{cables.length ? ` · ${cables.length}` : ""}</button>
+        {#each ["data", "power", "fiber"] as l}
+          {#if laneCount[l]}
+            <button
+              class="rt-lane rt-lane-{l}"
+              class:active={showCables && lanes[l]}
+              aria-pressed={showCables && lanes[l]}
+              onclick={() => toggleLane(l)}
+            >{LANE_LABEL[l]} {laneCount[l]}</button>
+          {/if}
+        {/each}
+        <button class:active={xray} aria-pressed={xray} onclick={() => (xray = !xray)} title="Hardware tembus pandang agar jalur kabel terlihat">X-ray</button>
+        {#if cables.length}
+          <button
+            class="rt-audit-btn rt-tone-{auditTone}"
+            class:active={auditOn}
+            aria-pressed={auditOn}
+            onclick={() => (auditOn = !auditOn)}
+            title="Tandai kabel yang tidak rapi atau tidak aman"
+          >Cek keamanan · {audit.score}</button>
+        {/if}
         <button class:active={showLabels} aria-pressed={showLabels} onclick={() => (showLabels = !showLabels)}>Label nomor</button>
         <button onclick={resetAll}>Reset kamera</button>
+        <ArLauncher getApi={() => scene?.getXr()} />
       </div>
       {/if}
     </div>
@@ -338,6 +524,72 @@
   }
   .rt-rows span { color: var(--muted); flex: none; }
   .rt-rows b { font-weight: 600; text-align: right; }
+  .rt-ucab { margin: -2px 0 10px; }
+  .rt-ucab-head { font-size: 11.5px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+  .rt-ucab ul { list-style: none; margin: 0; padding: 0; max-height: 150px; overflow-y: auto; }
+  .rt-ucab li button {
+    display: flex; align-items: center; gap: 7px; width: 100%;
+    border: none; background: transparent; padding: 3px 2px; border-radius: 5px;
+    font: inherit; font-size: 12px; color: var(--text); text-align: left; cursor: pointer;
+  }
+  .rt-ucab li button:hover { background: var(--bg-soft); }
+  .rt-ucab i, .rt-cab-sw { width: 10px; height: 10px; border-radius: 3px; flex: none; display: inline-block; }
+  .rt-ucab span { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .rt-ucab em { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--faint); }
+  .rt-ucab-more { font-size: 11.5px; color: var(--faint); margin-top: 2px; }
+  .rt-cab-sw { margin-right: 6px; vertical-align: 1px; }
+  .rt-cab-units { display: flex; gap: 6px; }
+  .rt-cab-units button { flex: 1; font-size: 12.5px; padding: 6px 4px; }
+  .rt-bar .rt-lane-data.active { background: #3b82d6; border-color: #3b82d6; color: #fff; }
+  .rt-bar .rt-lane-power.active { background: #2a9d5c; border-color: #2a9d5c; color: #fff; }
+  .rt-bar .rt-lane-fiber.active { background: #22b8cf; border-color: #22b8cf; color: #062a30; }
+  /* ── Cek keamanan kabel ── */
+  .rt-st-critical { --st: #ff4d4d; }
+  .rt-st-warn { --st: #f59e0b; }
+  .rt-st-info { --st: #8a93a6; }
+  .rt-st-ok { --st: #2a9d5c; }
+  .rt-cab-status {
+    display: inline-block; margin: 0 0 8px; padding: 2px 9px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 700; color: #fff; background: var(--st);
+  }
+  .rt-cab-issue {
+    border-left: 3px solid var(--st); padding: 4px 8px; margin-bottom: 6px; font-size: 12px;
+    background: color-mix(in srgb, var(--st) 9%, transparent); border-radius: 0 6px 6px 0;
+    display: flex; flex-direction: column; gap: 2px;
+  }
+  .rt-cab-issue span { color: var(--muted); }
+  .rt-audit {
+    position: absolute; top: 10px; left: 10px; width: 300px; max-width: calc(100% - 20px);
+    max-height: calc(100% - 90px); overflow-y: auto;
+    background: rgba(10, 13, 18, 0.88); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px; padding: 10px; color: #dbe2ee;
+  }
+  .rt-audit.compact { top: 56px; }
+  .rt-audit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .rt-audit-head b { display: block; font-size: 13px; color: #fff; }
+  .rt-audit-head span { font-size: 11.5px; color: #a7b0c0; }
+  .rt-audit-score {
+    flex: none; width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+    font-family: var(--mono); font-weight: 700; font-size: 15px; color: #fff; border: 3px solid var(--tone);
+  }
+  .rt-tone-ok { --tone: #2a9d5c; }
+  .rt-tone-warn { --tone: #f59e0b; }
+  .rt-tone-bad { --tone: #ff4d4d; }
+  .rt-audit ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+  .rt-audit li button {
+    display: flex; flex-direction: column; gap: 2px; width: 100%; text-align: left; cursor: pointer;
+    border: 1px solid transparent; border-left: 3px solid var(--st); border-radius: 6px;
+    background: rgba(255, 255, 255, 0.04); color: #dbe2ee; font: inherit; font-size: 12px; padding: 6px 8px;
+  }
+  .rt-audit li button:hover { background: rgba(255, 255, 255, 0.08); }
+  .rt-audit li button.on { border-color: var(--st); background: color-mix(in srgb, var(--st) 14%, transparent); }
+  .rt-audit li em { font-style: normal; font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--st); }
+  .rt-audit li b { font-weight: 600; color: #fff; }
+  .rt-audit li span { color: #b9c1cf; }
+  .rt-audit-fix { color: #d9f99d !important; }
+  .rt-audit-ok { margin: 0; font-size: 12.5px; color: #a7f3d0; }
+  .rt-bar .rt-audit-btn { border-color: var(--tone); }
+  .rt-bar .rt-audit-btn.active { background: var(--tone); border-color: var(--tone); color: #fff; }
   .rt-move { display: flex; gap: 6px; }
   .rt-move button { flex: 1; font-size: 12.5px; padding: 6px 4px; }
   /* Dipusatkan dengan left/right + margin auto (bukan left:50% + translate),

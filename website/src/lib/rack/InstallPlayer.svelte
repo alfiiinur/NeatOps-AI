@@ -5,10 +5,19 @@
   import { SPEEDS } from "./installPlayerCore.js";
   import InstallStage2D from "./InstallStage2D.svelte";
   import InstallStage3D from "./InstallStage3D.svelte";
+  import InstallDesk2D from "./InstallDesk2D.svelte";
+  import InstallDesk3D from "./InstallDesk3D.svelte";
+  import { buildTimeline } from "./installTimeline.js";
+  import { buildDeskTimeline } from "./deskInstall.js";
+  import InstallMultiStage from "./InstallMultiStage.svelte";
+  import InstallDesksStage from "./InstallDesksStage.svelte";
+  import { buildMultiTimeline, buildDesksTimeline } from "./installMulti.js";
 
-  let { result } = $props();
+  // kind: "rack" (susunan rak) atau "desk" (meja kerja). Timeline dan panggung mengikuti jenisnya.
+  let { result, kind = "rack" } = $props();
 
-  const player = createInstallPlayer(() => result);
+  const desk = $derived(kind === "desk" || kind === "desks");
+  const player = createInstallPlayer(() => result, (r) => (kind === "desk" ? buildDeskTimeline(r) : kind === "racks" ? buildMultiTimeline(r) : kind === "desks" ? buildDesksTimeline(r) : buildTimeline(r)));
   onDestroy(() => player.destroy());
 
   const tl = $derived(player.tl);
@@ -58,14 +67,24 @@
 </script>
 
 {#if !tl.steps.length}
-  <p class="ip-empty">Belum ada langkah instalasi.</p>
+  <p class="ip-empty">{desk ? "Pilih hardware dulu supaya langkah pemasangan di meja bisa ditampilkan." : "Belum ada langkah instalasi."}</p>
 {:else}
   <!-- svelte-ignore a11y_no_noninteractive_element_interactions -->
   <div class="ip" role="group" aria-label="Pemutar animasi langkah instalasi" onkeydown={onKey}>
     <div class="ip-main">
-      <div class="ip-stage" class:is-compare={player.compare} class:is3d={player.mode === "3d"}>
-        {#if player.mode === "3d"}
-          <InstallStage3D slots={result.slots} routes={tl.routes} view={player.view} reduced={player.reduced} onFail={failTo2D} />
+      <div class="ip-stage" class:is-compare={player.compare} class:is3d={player.mode === "3d"} class:desk>
+        {#if kind === "racks"}
+          <InstallMultiStage racks={result.racks} {tl} view={player.view} mode={player.mode} reduced={player.reduced} {player} onFail={failTo2D} />
+        {:else if kind === "desks"}
+          <InstallDesksStage desks={result.desks} {tl} view={player.view} mode={player.mode} reduced={player.reduced} {player} onFail={failTo2D} />
+        {:else if desk}
+          {#if player.mode === "3d"}
+            <InstallDesk3D {result} routes={tl.routes} view={player.view} reduced={player.reduced} {player} onFail={failTo2D} />
+          {:else}
+            <InstallDesk2D {result} routes={tl.routes} view={player.view} />
+          {/if}
+        {:else if player.mode === "3d"}
+          <InstallStage3D slots={result.slots} routes={tl.routes} view={player.view} reduced={player.reduced} {player} onFail={failTo2D} />
         {:else}
           <InstallStage2D slots={result.slots} rackU={result.rackU} routes={tl.routes} view={player.view} />
         {/if}
@@ -171,6 +190,7 @@
     justify-content: center;
   }
   .ip-stage :global(svg) { max-width: 460px; flex: none; }
+  .ip-stage.desk :global(svg) { max-width: 760px; width: 100%; }
   .ip-stage.is3d { padding: 0; overflow: hidden; }
   .ip-stage.is-compare { border-color: var(--lime-edge); }
   .ip-badge {

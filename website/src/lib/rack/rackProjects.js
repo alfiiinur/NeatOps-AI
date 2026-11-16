@@ -26,14 +26,18 @@ export function newRackProject(name) {
     rackName: "Rak Server Utama",
     rackU: 12,
     selectedQty: {},
-    result: null,
+    result: null, // dipertahankan untuk project lama (satu rak); project baru memakai `racks`
+    racks: [], // multi-rak: [hasil evaluateLayout + { id, nama, peran, autoAdded }]
+    activeRack: 0,
     // Mode meja kerja (terpisah dari state rak agar mode rak tidak berubah).
     mode: "rack", // "rack" | "desk"
     desk: { ...DEFAULT_DESK },
     deskName: "Meja Kerja Utama",
     deskStep: 1, // 1=ukuran meja, 2=pilih hardware, 3=hasil
     deskQty: {},
-    deskResult: null,
+    deskResult: null, // dipertahankan untuk project lama (satu meja); project baru memakai `deskResults`
+    deskResults: [],
+    deskActive: 0,
   };
 }
 
@@ -52,6 +56,8 @@ function normalize(p) {
     rackU: Number.isFinite(p.rackU) ? p.rackU : base.rackU,
     selectedQty: qty,
     result: p.result ?? null,
+    racks: Array.isArray(p.racks) ? p.racks.filter((r) => r && Array.isArray(r.slots)) : [],
+    activeRack: Number.isInteger(p.activeRack) && p.activeRack >= 0 ? p.activeRack : 0,
     mode: p.mode === "desk" ? "desk" : "rack",
     desk: clampDesk(p.desk),
     deskName: typeof p.deskName === "string" ? p.deskName : base.deskName,
@@ -62,6 +68,10 @@ function normalize(p) {
         : {},
     deskResult:
       p.deskResult && Array.isArray(p.deskResult.items) ? p.deskResult : null,
+    deskResults: Array.isArray(p.deskResults)
+      ? p.deskResults.filter((r) => r && Array.isArray(r.items))
+      : [],
+    deskActive: Number.isInteger(p.deskActive) && p.deskActive >= 0 ? p.deskActive : 0,
   };
 }
 

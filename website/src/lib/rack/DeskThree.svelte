@@ -2,6 +2,7 @@
   import { onMount, untrack } from "svelte";
   import { createDeskScene } from "./deskThreeScene.js";
   import DeskPlan from "./DeskPlan.svelte";
+  import ArLauncher from "./ArLauncher.svelte";
 
   let { result } = $props();
 
@@ -88,6 +89,7 @@
         <button class:active={view === "samping"} onclick={() => goView("samping")}>Samping</button>
         <button class:active={view === "atas"} onclick={() => goView("atas")}>Atas</button>
         <button class:active={auto} aria-pressed={auto} onclick={() => (auto = !auto)}>Putar otomatis</button>
+        <ArLauncher getApi={() => scene?.getXr()} />
       </div>
     </div>
   </div>
