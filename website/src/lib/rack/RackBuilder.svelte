@@ -31,6 +31,20 @@
     autoProjectName,
     validateProjectName,
   } from "./rackProjects.js";
+  import {
+    cabMetaOf,
+    sanitizeInterLinks,
+    cleanInterLinks,
+    reservedPortsFor,
+  } from "./cabling/manualCabling.js";
+  import { sanitizeNetwork, applyEndDevices, endDeviceIps } from "../network/vlan/vlanPlan.js";
+  import { checkNetwork, cableVlanLabel } from "../network/vlan/vlanChecks.js";
+  import { buildTopology } from "../network/vlan/topology.js";
+  import { currentRoute, navigate } from "../core/router.svelte.js";
+  import { buildPath } from "../core/router.js";
+  import ManualCablePanel from "./cabling/ManualCablePanel.svelte";
+  import EndDevicePanel from "./cabling/EndDevicePanel.svelte";
+  import InterRackLinkPanel from "./cabling/InterRackLinkPanel.svelte";
 
   // ─── Project ───────────────────────────────────────────────────
   const _init = [newRackProject("Project 1")];
@@ -52,12 +66,45 @@
   let showAll = $state(false); // tab Susunan: semua rak berdampingan
   let planNotes = $state([]); // catatan pembagian otomatis
   let rackMsg = $state(""); // umpan balik tambah/hapus/pindah unit
+  // Kabel antar rak: otomatis dari rak hub, atau manual port-ke-port (interLinks).
+  let interMode = $state("auto");
+  let interLinks = $state([]);
+  // Rencana VLAN dari halaman Jaringan & VLAN (hanya dibaca di sini, untuk label & peringatan kabel).
+  let network = $state(sanitizeNetwork(null));
   const result = $derived(racks[activeIdx] ?? null);
   const sum = $derived(summarizeRacks(racks));
-  const inter = $derived(buildInterRackLinks(racks)); // kabel antar rak (kosong bila satu rak)
+  const interClean = $derived(interMode === "manual" ? cleanInterLinks(racks, interLinks) : { kept: [], dropped: [] });
+  const inter = $derived(buildInterRackLinks(racks, { mode: interMode, manual: interClean.kept })); // kabel antar rak (kosong bila satu rak)
+  // Port rak aktif yang dipakai link antar rak manual (tidak boleh dipakai kabel dalam rak).
+  const reservedActive = $derived(result && interMode === "manual" ? reservedPortsFor(result.id, interClean.kept) : new Set());
   const shopAll = $derived(combinedShopping(racks, inter.links));
+  // Pemeriksaan VLAN (dari halaman Jaringan & VLAN) terhadap kabel rak saat ini.
+  // Rencana efektif: port yang tersambung perangkat ujung ber-VLAN otomatis access VLAN-nya.
+  const netView = $derived(applyEndDevices(network, racks).view);
+  // IP perangkat ujung (statis atau otomatis dari subnet VLAN), kunci `${rackId}:${devId}`.
+  const endIps = $derived(endDeviceIps(network, racks));
+  const ipsOf = (r) => new Map((r?.endDevices ?? []).map((d) => [d.id, endIps.get(`${r.id}:${d.id}`) ?? null]));
+  const netChecks = $derived(network.vlans.length ? checkNetwork(netView, racks, inter.links) : null);
+  const vlanStatusOf = (c) => netChecks?.edgeStatus[`${result?.id}/${c.id}`] ?? null;
+  function openVlan() {
+    const id = currentRoute().projectId;
+    if (id) navigate(buildPath(id, "vlan"));
+  }
+  // Ganti mode / daftar kabel data manual rak aktif → evaluasi ulang (kabel, audit, belanja).
+  function setCabling(next) {
+    racks = racks.map((x, i) => {
+      if (i !== activeIdx) return x;
+      const prev = { ...x, dataCabling: next.dataCabling, manualCables: next.manualCables ?? x.manualCables ?? [], endDevices: next.endDevices ?? x.endDevices ?? [] };
+      return { ...keepMeta(prev, evaluateLayout(x.rackU, x.slots), reservedActive), manual: x.manual };
+    });
+  }
+  // Posisi kotak topologi digeser user: simpan tanpa evaluasi ulang rak.
+  function setTopoPos(p) {
+    racks = racks.map((x, i) => (i === activeIdx ? { ...x, topoPos: p } : x));
+  }
+  const cablingOf = (r, reserved) => (r ? { dataCabling: r.dataCabling ?? "auto", manualCables: r.manualCables ?? [], endDevices: r.endDevices ?? [], endIps: ipsOf(r), reserved } : null);
   function setResult(r) {
-    racks = racks.map((x, i) => (i === activeIdx ? keepMeta(x, r) : x));
+    racks = racks.map((x, i) => (i === activeIdx ? keepMeta(x, r, reservedActive) : x));
   }
   let resultTab = $state("susunan");
 
@@ -87,14 +134,20 @@
     racks = saved
       .filter((r) => r?.slots)
       .map((r, i) => ({
-        ...evaluateLayout(r.rackU, r.slots),
+        ...evaluateLayout(r.rackU, r.slots, cabMetaOf(r)),
+        // Mode auto tetap menyimpan daftar manual terakhir (dipakai lagi saat kembali ke manual).
+        ...(r.dataCabling === "manual" ? {} : { manualCables: r.manualCables ?? [], endDevices: r.endDevices ?? [] }),
         manual: !!r.manual,
         id: r.id ?? `r${i + 1}`,
         nama: r.nama ?? rackTitle(i, r.peran ?? "utama"),
         peran: r.peran ?? "utama",
         autoAdded: r.autoAdded ?? [],
+        topoPos: r.topoPos ?? {},
       }));
     activeIdx = Math.min(Math.max(0, p.activeRack ?? 0), Math.max(0, racks.length - 1));
+    interMode = p.interMode === "manual" ? "manual" : "auto";
+    interLinks = sanitizeInterLinks(p.interLinks);
+    network = sanitizeNetwork(p.network);
     showAll = false;
     planNotes = [];
     rackMsg = "";
@@ -137,6 +190,8 @@
       selectedQty: $state.snapshot(selectedQty),
       racks: $state.snapshot(racks),
       activeRack: activeIdx,
+      interMode,
+      interLinks: $state.snapshot(interLinks),
       result: null,
       mode,
       desk: $state.snapshot(desk),
@@ -426,9 +481,8 @@
   let moveNote = $state(""); // diumumkan ke screen reader
 
   const shownSlots = $derived(order ? assignU(order) : (result?.slots ?? []));
-  const isoSlots = $derived(
-    shownSlots.map((s) => ({ ...s, art: ilustrasiOf(s.auto ? "blanking-1u" : s.id) })),
-  );
+  const withArt = (s) => ({ ...s, art: ilustrasiOf(s.auto ? "blanking-1u" : s.id) });
+  const isoSlots = $derived(shownSlots.map(withArt));
 
   function swapOrder(a, b) {
     const next = [...order];
@@ -562,7 +616,7 @@
       return;
     }
     racks = r.racks;
-    rackMsg = `${r.moved.nama} dipindah dari ${r.moved.from} ke ${r.moved.to}.`;
+    rackMsg = `${r.moved.nama} dipindah dari ${r.moved.from} ke ${r.moved.to}.${r.moved.droppedCables ? ` ${r.moved.droppedCables} kabel manual yang tersambung ke unit ini dilepas.` : ""}`;
     moveNote = rackMsg;
   }
 
@@ -1109,12 +1163,43 @@
                 </div>
               {:else if resultTab === "3d"}
                 <div class="rb-iso-tab">
-                  <div class="rb-rack-label">
-                    <span>{racks.length > 1 ? result.nama + " · " : ""}Tampilan 3D, {result.rackU}U</span>
-                  </div>
-                  {#key result.id}
-                    <RackThree slots={isoSlots} rackU={result.rackU} onNudge={(key, dir) => nudge(key, dir)} />
-                  {/key}
+                  {#if showAll && racks.length > 1}
+                    <!-- "Semua rak": satu ruangan 3D, rak berjajar kiri → kanan.
+                         Rak pertama interaktif penuh (kabel, klik unit); rak lain ditampilkan di sebelahnya. -->
+                    <div class="rb-rack-label">
+                      <span>Semua rak · Tampilan 3D, {racks.length} rak berjajar</span>
+                      <span class="rb-iso-open">
+                        {#each racks as r, i (r.id)}
+                          <button class="btn-small btn-ghost" onclick={() => openRack(i)} title="Buka {r.nama} saja">{r.nama.split(" · ")[0]}</button>
+                        {/each}
+                      </span>
+                    </div>
+                    <RackThree
+                      slots={racks[0].slots.map(withArt)}
+                      rackU={racks[0].rackU}
+                      name={racks[0].nama}
+                      neighbors={racks.slice(1).map((r) => ({ nama: r.nama, slots: r.slots.map(withArt) }))}
+                      cabling={cablingOf(racks[0], interMode === "manual" ? reservedPortsFor(racks[0].id, interClean.kept) : new Set())}
+                      topoOverride={buildTopology(racks, inter.links)}
+                      readonly
+                    />
+                  {:else}
+                    <div class="rb-rack-label">
+                      <span>{racks.length > 1 ? result.nama + " · " : ""}Tampilan 3D, {result.rackU}U</span>
+                    </div>
+                    {#key result.id}
+                      <RackThree
+                        slots={isoSlots}
+                        rackU={result.rackU}
+                        onNudge={(key, dir) => nudge(key, dir)}
+                        cabling={cablingOf(result, reservedActive)}
+                        onAddCable={(c) => setCabling({ dataCabling: "manual", manualCables: [...(result.manualCables ?? []), c] })}
+                        topoPos={result.topoPos ?? {}}
+                        onTopoPos={setTopoPos}
+                        onCablingChange={setCabling}
+                      />
+                    {/key}
+                  {/if}
                 </div>
               {:else if resultTab === "kabel"}
                 <div class="rb-cable">
@@ -1122,6 +1207,13 @@
                     <section class="rb-interrack">
                       <h3>Kabel antar rak · {inter.links.length}</h3>
                       {#if inter.notes[0]}<p class="rb-cables-note">{inter.notes[0]}</p>{/if}
+                      <InterRackLinkPanel
+                        {racks}
+                        mode={interMode}
+                        links={interLinks}
+                        dropped={interClean.dropped}
+                        onChange={(v) => { interMode = v.interMode; interLinks = v.interLinks; }}
+                      />
                       {#each inter.links as l (l.id)}
                         <div class="rb-route">
                           <span class="rb-route-swatch" style="background:{l.warna}"></span>
@@ -1143,6 +1235,23 @@
                       <p class="rb-cables-note">Rincian kabel di bawah untuk {result.nama}. Pilih rak lain di tab atas untuk melihat rak itu.</p>
                     </section>
                   {/if}
+                  <ManualCablePanel
+                    rack={result}
+                    reserved={reservedActive}
+                    onChange={setCabling}
+                    vlanLabel={(c) => cableVlanLabel(netView, result.id, c)}
+                  />
+                  <EndDevicePanel rack={result} reserved={reservedActive} vlans={network.vlans} ips={ipsOf(result)} onChange={setCabling} />
+                  <div class="rb-vlan-link">
+                    <span>
+                      {#if netChecks}
+                        Rencana VLAN: {network.vlans.length} VLAN · {netChecks.summary.critical} kritis · {netChecks.summary.warn} peringatan
+                      {:else}
+                        Atur VLAN, subnet, dan mode port tiap switch/router di halaman terpisah.
+                      {/if}
+                    </span>
+                    <button class="btn-small btn-ghost" onclick={openVlan}>Atur VLAN →</button>
+                  </div>
                   {#if result.cableIssues}
                     <section class="rb-audit">
                       <h3>Cek kerapian &amp; keamanan kabel · skor {result.cableScore}/100</h3>
@@ -1196,7 +1305,14 @@
                                     <small class="rb-cab-flag">{c.status === "critical" ? "Kritis" : "Peringatan"}</small>
                                   {/if}
                                 </span>
-                                <span role="cell" class="rb-cab-path">{c.dari}<b>→</b>{c.ke}</span>
+                                <span role="cell" class="rb-cab-path">
+                                  {c.dari}<b>→</b>{c.ke}
+                                  {#if lane !== "power" && cableVlanLabel(netView, result.id, c)}
+                                    <small class="rb-cab-vlan" class:bad={vlanStatusOf(c) === "critical"} class:warn={vlanStatusOf(c) === "warn"}>
+                                      {cableVlanLabel(netView, result.id, c).replace(/^ · /, "")}{vlanStatusOf(c) === "critical" ? " · VLAN tidak cocok" : vlanStatusOf(c) === "warn" ? " · cek VLAN" : ""}
+                                    </small>
+                                  {/if}
+                                </span>
                                 <span role="cell">{c.kindNama}</span>
                                 <span role="cell" class="rb-cab-len">
                                   {#if c.stdM != null}{String(c.stdM).replace(".", ",")} m<em>jalur ±{String(c.lengthM).replace(".", ",")} m</em>{:else}diukur di lokasi{/if}
@@ -1563,6 +1679,11 @@
 
   .rb-slot-detail h3 { margin: 0 0 10px; font-size: 14px; }
   .rb-iso-tab { min-width: 0; }
+  .rb-vlan-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: -4px 0 14px; }
+  .rb-cab-vlan { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); }
+  .rb-cab-vlan.warn { color: var(--warn); }
+  .rb-cab-vlan.bad { color: var(--bad); font-weight: 700; }
+  .rb-iso-open { display: inline-flex; gap: 4px; flex-wrap: wrap; }
   .rb-slot-card {
     display: flex; align-items: center; gap: 10px; margin-bottom: 8px;
     background: var(--bg-soft); border: 1px solid var(--line-soft); border-radius: 8px; padding: 8px 12px;

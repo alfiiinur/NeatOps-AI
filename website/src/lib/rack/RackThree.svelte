@@ -3,8 +3,122 @@
   import { createRackScene } from "./rackThreeScene.js";
   import RackIso from "./RackIso.svelte";
   import ArLauncher from "./ArLauncher.svelte";
+  import { dataPortsOf, suggestKind, validateManualCable, newCableId } from "./cabling/manualCabling.js";
+  import { endDeviceCables } from "./cabling/endDevices.js";
+  import { buildTopology } from "../network/vlan/topology.js";
+  import TopologyMiniMap from "./topology/TopologyMiniMap.svelte";
+  import TopologyEditor from "./topology/TopologyEditor.svelte";
+  import { keyOfNode } from "./topology/topologyEdit.js";
 
-  let { slots, rackU, onNudge = () => {}, readonly = false, compact = false } = $props();
+  // neighbors: rak lain di ruangan yang sama [{ nama, slots }], digambar berjajar di kanan rak ini.
+  // cabling: { dataCabling, manualCables, reserved } dari rak; onAddCable(cable) aktifkan mode "Pasang kabel".
+  let {
+    slots,
+    rackU,
+    onNudge = () => {},
+    readonly = false,
+    compact = false,
+    neighbors = [],
+    name = null,
+    cabling = null,
+    onAddCable = null,
+    topoPos = {},
+    onTopoPos = null,
+    onCablingChange = null,
+    topoOverride = null,
+  } = $props();
+
+  // ── Topologi 2D (mini-map + editor) ──
+  // Satu rak: dibangun dari kabel hasil scene. Mode "Semua rak": topoOverride dari RackBuilder (hanya lihat).
+  const topo = $derived(
+    topoOverride ??
+      buildTopology([{ id: "r", nama: name ?? "Rak", slots, cables, endDevices: cabling?.endDevices ?? [] }]),
+  );
+  const canEditTopo = $derived(!readonly && !!onCablingChange && !topoOverride);
+  let editorOpen = $state(false);
+  const topoRack = $derived({
+    slots,
+    dataCabling: cabling?.dataCabling ?? "auto",
+    manualCables: cabling?.manualCables ?? [],
+    endDevices: cabling?.endDevices ?? [],
+  });
+  function pickNode(n) {
+    // Hanya rak tunggal: node perangkat "r:<key>" memfokuskan unit di 3D.
+    if (topoOverride) return;
+    const k = keyOfNode(n.id);
+    if (k) select(k);
+  }
+
+  // ── Mode pasang kabel (klik port A lalu port B) ──
+  const canPick = $derived(!readonly && !!onAddCable && cabling?.dataCabling === "manual");
+  let pickOn = $state(false);
+  let pickA = $state(null); // { key, port, label }
+  let pickMsg = $state("");
+  let hoverPort = $state(null); // { label, used, x, y }
+
+  function togglePick() {
+    pickOn = !pickOn;
+    pickA = null;
+    pickMsg = pickOn ? "Klik port pertama (titik hijau = bebas)." : "";
+    if (pickOn) select(null);
+  }
+  function onPortPick(p) {
+    if (!pickA) {
+      if (p.used) return (pickMsg = `${p.label} sudah dipakai kabel lain.`);
+      pickA = p;
+      pickMsg = `Dari ${p.label}. Klik port tujuan, atau klik lagi untuk batal.`;
+      return;
+    }
+    if (pickA.key === p.key && pickA.port === p.port) {
+      pickA = null;
+      pickMsg = "Dibatalkan. Klik port pertama.";
+      return;
+    }
+    const pa = portInfo(pickA);
+    const pb = portInfo(p);
+    const manual = cabling?.manualCables ?? [];
+    const cable = {
+      id: newCableId(manual),
+      kind: suggestKind(pa, pb),
+      a: { key: pickA.key, port: pickA.port },
+      b: { key: p.key, port: p.port },
+      fungsi: "Kabel data",
+    };
+    const v = validateManualCable(slots, [...manual, ...endDeviceCables(cabling?.endDevices ?? [])], cable, { reserved: cabling?.reserved ?? new Set() });
+    if (!v.ok) {
+      pickMsg = v.reason;
+      return;
+    }
+    onAddCable(cable);
+    pickMsg = `Tersambung: ${pickA.label} → ${p.label}. Klik port berikutnya.`;
+    pickA = null;
+  }
+  const portInfo = (e) => dataPortsOf(slots.find((s) => s.key === e.key)).find((x) => x.id === e.port);
+  function onViewMove(e) {
+    if (!pickOn || !scene) return (hoverPort = null);
+    const p = scene.portAt(e.clientX, e.clientY);
+    const r = viewportEl.getBoundingClientRect();
+    hoverPort = p ? { ...p, x: e.clientX - r.left, y: e.clientY - r.top } : null;
+  }
+  $effect(() => {
+    if (!canPick && pickOn) {
+      pickOn = false;
+      pickA = null;
+      pickMsg = "";
+    }
+  });
+  $effect(() => {
+    const on = pickOn;
+    const a = pickA;
+    untrack(() => scene?.setPortPick(on, a));
+  });
+  $effect(() => {
+    const c = cabling;
+    untrack(() => {
+      if (!scene) return;
+      scene.setCabling(c);
+    });
+  });
 
   let canvas = $state(null);
   let viewportEl = $state(null);
@@ -73,12 +187,37 @@
     lanes = { ...lanes, [l]: !lanes[l] };
     if (!showCables) showCables = true;
   }
+  // ── Layar penuh: Fullscreen API, cadangan overlay CSS (mis. iOS Safari) ──
+  let full = $state(false);
+  let pseudo = $state(false);
+  function toggleFull() {
+    if (full) {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      pseudo = false;
+      full = false;
+      return;
+    }
+    const el = viewportEl;
+    if (el?.requestFullscreen) {
+      el.requestFullscreen().catch(() => { pseudo = true; full = true; });
+    } else {
+      pseudo = true;
+      full = true;
+    }
+  }
+  function onFsChange() {
+    if (!pseudo) full = document.fullscreenElement === viewportEl;
+  }
   // Mode compact: kontrol disembunyikan di balik tombol hamburger supaya tidak menumpuk.
   let menuOpen = $state(false);
 
   const selected = $derived(slots.find((s) => s.key === selectedKey) ?? null);
   const selIdx = $derived(selected ? slots.findIndex((s) => s.key === selectedKey) : -1);
   const unitCount = $derived(slots.filter((s) => !s.auto).length);
+
+  let neighborSig = "";
+  const neighborSigOf = (list, nm) =>
+    JSON.stringify([nm, (list ?? []).map((r) => [r.nama, r.slots.map((s) => s.key + ":" + s.unitHeight)])]);
 
   function syncBadges() {
     if (!scene || !viewportEl) return;
@@ -109,6 +248,10 @@
     try {
       scene = createRackScene(canvas, {
         slots,
+        neighbors,
+        name,
+        cabling,
+        onPortPick: (p) => onPortPick(p),
         onSelect: (key) => {
           selectedKey = key;
         },
@@ -130,6 +273,7 @@
         },
         reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
       });
+      neighborSig = neighborSigOf(neighbors, name);
       syncBadges();
     } catch (e) {
       console.warn("WebGL tidak tersedia, memakai tampilan 3D SVG.", e);
@@ -146,6 +290,19 @@
     untrack(() => {
       scene?.setSlots(s);
       syncBadges();
+    });
+  });
+
+  // Rak tetangga berubah (unit dipindah antar rak, rak ditambah/dihapus): bangun ulang deretan.
+  $effect(() => {
+    const list = neighbors;
+    const nm = name;
+    const sig = neighborSigOf(list, nm);
+    untrack(() => {
+      if (!scene || sig === neighborSig) return;
+      neighborSig = sig;
+      scene.setNeighbors(list, nm);
+      scene.setView(view ?? "perspektif");
     });
   });
 
@@ -193,7 +350,8 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => e.key === "Escape" && (menuOpen = false)} />
+<svelte:window onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; if (pickOn) { if (pickA) { pickA = null; pickMsg = "Dibatalkan. Klik port pertama."; } else togglePick(); } else if (full && pseudo) toggleFull(); } }} />
+<svelte:document onfullscreenchange={onFsChange} />
 
 {#if !webglOK}
   <RackIso slots={slots} />
@@ -232,11 +390,25 @@
         {/each}
       </ol>
     </aside>
-    <div class="rt-view" bind:this={viewportEl}>
+    <div class="rt-view" class:rt-pseudo={full && pseudo} bind:this={viewportEl} onpointermove={onViewMove} role="presentation">
+      <button class="rt-fs" onclick={toggleFull} aria-label={full ? "Keluar layar penuh" : "Layar penuh"} title={full ? "Keluar layar penuh (Esc)" : "Layar penuh"}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          {#if full}<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />{:else}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />{/if}
+        </svg>
+      </button>
       <canvas
         bind:this={canvas}
         aria-label="Tampilan 3D rak server. Seret untuk memutar, roda mouse untuk zoom, klik unit untuk detail."
       ></canvas>
+      {#if pickOn}
+        <div class="rt-pick" role="status" aria-live="polite">
+          <b>Pasang kabel</b><span>{pickMsg}</span>
+          <button onclick={togglePick}>Selesai</button>
+        </div>
+        {#if hoverPort}
+          <div class="rt-port-tip" style="left:{hoverPort.x}px;top:{hoverPort.y}px">{hoverPort.label}{hoverPort.used ? " · terpakai" : ""}</div>
+        {/if}
+      {/if}
       <div class="rt-badges" aria-hidden="false">
         {#each slots as s}
           <button
@@ -313,7 +485,19 @@
           </div>
         </div>
       {/if}
-      {#if auditOn && !(compact && menuOpen)}
+      {#if (topo.nodes.length || auditOn) && !(compact && menuOpen)}
+      <div class="rt-tl" class:compact>
+      {#if topo.nodes.length}
+        <TopologyMiniMap
+          {topo}
+          topoPos={topoOverride ? {} : topoPos}
+          selected={selectedKey ? `r:${selectedKey}` : null}
+          readonly={!canEditTopo}
+          onPick={pickNode}
+          onExpand={() => (editorOpen = true)}
+        />
+      {/if}
+      {#if auditOn}
         <div class="rt-audit" class:compact role="region" aria-label="Hasil cek keamanan kabel">
           <div class="rt-audit-head">
             <span class="rt-audit-score rt-tone-{auditTone}">{audit.score}</span>
@@ -340,6 +524,20 @@
             <p class="rt-audit-ok">Semua kabel lolos pemeriksaan kerapian &amp; keamanan.</p>
           {/if}
         </div>
+      {/if}
+      </div>
+      {/if}
+      {#if editorOpen}
+        <TopologyEditor
+          {topo}
+          topoPos={topoOverride ? {} : topoPos}
+          rack={canEditTopo ? topoRack : null}
+          reserved={cabling?.reserved ?? new Set()}
+          readonly={!canEditTopo}
+          onClose={() => (editorOpen = false)}
+          onTopoPos={(p) => onTopoPos?.(p)}
+          onCablingChange={(c) => onCablingChange?.(c)}
+        />
       {/if}
       {#if compact}
         <button
@@ -387,6 +585,9 @@
         {/if}
         <button class:active={showLabels} aria-pressed={showLabels} onclick={() => (showLabels = !showLabels)}>Label nomor</button>
         <button onclick={resetAll}>Reset kamera</button>
+        {#if canPick}
+          <button class:active={pickOn} aria-pressed={pickOn} onclick={togglePick} title="Klik port A lalu port B untuk menambah kabel data">Pasang kabel</button>
+        {/if}
         <ArLauncher getApi={() => scene?.getXr()} />
       </div>
       {/if}
@@ -485,9 +686,33 @@
   }
   .rt-badge:hover { border-color: var(--lime); }
   .rt-badge.active { background: var(--lime); border-color: var(--lime-edge); color: #243006; }
+  .rt-pick {
+    position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 6;
+    display: flex; align-items: center; gap: 10px; max-width: calc(100% - 120px);
+    background: rgba(10, 13, 18, 0.9); border: 1px solid var(--lime-edge); border-radius: 10px;
+    padding: 6px 8px 6px 12px; color: #dbe2ee; font-size: 12.5px;
+  }
+  .rt-pick b { color: var(--lime); white-space: nowrap; }
+  .rt-pick button { border: 1px solid var(--line); background: transparent; color: #fff; border-radius: 999px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+  .rt-port-tip {
+    position: absolute; z-index: 6; pointer-events: none; transform: translate(12px, -130%);
+    background: rgba(10, 13, 18, 0.92); color: #fff; border: 1px solid var(--line);
+    border-radius: 6px; padding: 3px 8px; font-size: 11.5px; white-space: nowrap;
+  }
+  .rt-fs {
+    position: absolute; top: 10px; right: 10px; z-index: 6;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; padding: 0; color: #dbe2ee; cursor: pointer;
+    background: rgba(10, 13, 18, 0.86); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px;
+  }
+  .rt-fs:hover { border-color: var(--lime-edge); color: #fff; }
+  .rt-fs:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  .rt-view:fullscreen { height: 100%; border-radius: 0; border: none; }
+  .rt-view.rt-pseudo { position: fixed; inset: 0; z-index: 1000; height: 100dvh; border-radius: 0; border: none; }
   .rt-detail {
     position: absolute;
-    top: 10px;
+    top: 52px;
     right: 10px;
     width: 252px;
     max-width: calc(100% - 20px);
@@ -558,13 +783,20 @@
     display: flex; flex-direction: column; gap: 2px;
   }
   .rt-cab-issue span { color: var(--muted); }
+  /* Pojok kiri atas: mini-map topologi, lalu panel cek keamanan di bawahnya. */
+  .rt-tl {
+    position: absolute; top: 10px; left: 10px; z-index: 4; width: min(340px, calc(100% - 70px));
+    max-height: calc(100% - 100px); overflow-y: auto; display: flex; flex-direction: column;
+    align-items: flex-start; gap: 8px; pointer-events: none;
+  }
+  .rt-tl.compact { top: 56px; width: min(340px, calc(100% - 20px)); }
+  .rt-tl > :global(*) { pointer-events: auto; }
   .rt-audit {
-    position: absolute; top: 10px; left: 10px; width: 300px; max-width: calc(100% - 20px);
-    max-height: calc(100% - 90px); overflow-y: auto;
+    position: static; width: 300px; max-width: 100%;
     background: rgba(10, 13, 18, 0.88); backdrop-filter: blur(6px);
     border: 1px solid var(--line); border-radius: 10px; padding: 10px; color: #dbe2ee;
   }
-  .rt-audit.compact { top: 56px; }
+
   .rt-audit-head { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .rt-audit-head b { display: block; font-size: 13px; color: #fff; }
   .rt-audit-head span { font-size: 11.5px; color: #a7b0c0; }

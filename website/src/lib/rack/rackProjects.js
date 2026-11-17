@@ -4,6 +4,13 @@
 
 import { autoProjectName, validateProjectName } from "../shared/projects.js";
 import { DEFAULT_DESK, clampDesk } from "./deskSimulator.js";
+import {
+  sanitizeManualList,
+  sanitizeInterLinks,
+} from "./cabling/manualCabling.js";
+import { sanitizeEndDevices } from "./cabling/endDevices.js";
+import { sanitizeTopoPos } from "./topology/topologyEdit.js";
+import { sanitizeNetwork } from "../network/vlan/vlanPlan.js";
 
 export { autoProjectName, validateProjectName };
 
@@ -29,6 +36,11 @@ export function newRackProject(name) {
     result: null, // dipertahankan untuk project lama (satu rak); project baru memakai `racks`
     racks: [], // multi-rak: [hasil evaluateLayout + { id, nama, peran, autoAdded }]
     activeRack: 0,
+    // Kabel antar rak: "auto" (dari rak hub) atau "manual" (daftar interLinks port-ke-port).
+    interMode: "auto",
+    interLinks: [],
+    // Perencanaan VLAN (halaman Jaringan & VLAN): blok jaringan, daftar VLAN, mode port per perangkat.
+    network: sanitizeNetwork(null),
     // Mode meja kerja (terpisah dari state rak agar mode rak tidak berubah).
     mode: "rack", // "rack" | "desk"
     desk: { ...DEFAULT_DESK },
@@ -56,8 +68,22 @@ function normalize(p) {
     rackU: Number.isFinite(p.rackU) ? p.rackU : base.rackU,
     selectedQty: qty,
     result: p.result ?? null,
-    racks: Array.isArray(p.racks) ? p.racks.filter((r) => r && Array.isArray(r.slots)) : [],
-    activeRack: Number.isInteger(p.activeRack) && p.activeRack >= 0 ? p.activeRack : 0,
+    racks: Array.isArray(p.racks)
+      ? p.racks
+          .filter((r) => r && Array.isArray(r.slots))
+          .map((r) => ({
+            ...r,
+            dataCabling: r.dataCabling === "manual" ? "manual" : "auto",
+            manualCables: sanitizeManualList(r.manualCables),
+            endDevices: sanitizeEndDevices(r.endDevices),
+            topoPos: sanitizeTopoPos(r.topoPos),
+          }))
+      : [],
+    interMode: p.interMode === "manual" ? "manual" : "auto",
+    interLinks: sanitizeInterLinks(p.interLinks),
+    network: sanitizeNetwork(p.network),
+    activeRack:
+      Number.isInteger(p.activeRack) && p.activeRack >= 0 ? p.activeRack : 0,
     mode: p.mode === "desk" ? "desk" : "rack",
     desk: clampDesk(p.desk),
     deskName: typeof p.deskName === "string" ? p.deskName : base.deskName,
@@ -71,7 +97,8 @@ function normalize(p) {
     deskResults: Array.isArray(p.deskResults)
       ? p.deskResults.filter((r) => r && Array.isArray(r.items))
       : [],
-    deskActive: Number.isInteger(p.deskActive) && p.deskActive >= 0 ? p.deskActive : 0,
+    deskActive:
+      Number.isInteger(p.deskActive) && p.deskActive >= 0 ? p.deskActive : 0,
   };
 }
 

@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   import { onMount, untrack } from "svelte";
   import Navbar from "./lib/shared/Navbar.svelte";
   import Landing from "./lib/landing/Landing.svelte";
@@ -15,6 +15,7 @@
   import NetworkConfig from "./lib/network/NetworkConfig.svelte";
   import RackBuilder from "./lib/rack/RackBuilder.svelte";
   import Calculators from "./lib/calculator/Calculators.svelte";
+  import VlanPlanner from "./lib/network/vlan/VlanPlanner.svelte";
   import { analyzePhoto, ANALYSIS_STEPS } from "./lib/audit/simulator.js";
   import { analyzeWithBackend, backendUrl } from "./lib/audit/backend.js";
   import { fileToDataUrl, makeSamples, makeThumb } from "./lib/core/photos.js";
@@ -413,6 +414,8 @@
   <RackBuilder />
 {:else if page === "config"}
   <NetworkConfig />
+{:else if page === "vlan"}
+  <VlanPlanner />
 {:else if page === "calculator"}
   <Calculators />
 {/if}

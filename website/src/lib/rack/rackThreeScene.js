@@ -18,6 +18,8 @@ import {
 } from "./rackModels.js";
 import {
   RACK_GEO,
+  profileOf,
+  END_BOX_H,
   unitDepth,
   rackCabling,
   roundCorners,
@@ -26,6 +28,7 @@ import {
   shelfFit,
 } from "./rackCabling.js";
 import { auditRackCables } from "./rackCableAudit.js";
+import { resolveCabling, dataPortsOf } from "./cabling/manualCabling.js";
 import { baseScale } from "./arMath.js";
 
 // Warna status cek keamanan kabel.
@@ -172,6 +175,7 @@ export function createRackScene(canvas, opts) {
   world.add(floorGroup);
 
   // ── State ──
+  let cabMeta = opts.cabling ?? {}; // { dataCabling, manualCables, reserved }
   let slots = [];
   let layout = { items: [], totalH: 0 };
   let centerY = 0;
@@ -242,8 +246,16 @@ export function createRackScene(canvas, opts) {
       world.remove(cabinet);
       disposeObject(cabinet);
     }
-    cabinet = new THREE.Group();
-    const H = layout.totalH;
+    cabinet = makeCabinet(layout.items, layout.totalH);
+    floorGroup.position.y = -0.36;
+    updateRowLighting();
+    rebuildLabels();
+    world.add(cabinet);
+  }
+
+  /** Geometri kabinet (tiang, panel, rel) untuk satu rak; dipakai rak utama & rak tetangga. */
+  function makeCabinet(items, H) {
+    const cabinet = new THREE.Group();
     const metal = new THREE.MeshStandardMaterial({
       color: 0x23262c,
       roughness: 0.45,
@@ -290,7 +302,7 @@ export function createRackScene(canvas, opts) {
     plinth.receiveShadow = true;
     cabinet.add(top, plinth);
     // Rel depan kiri-kanan dengan lubang U sejajar unit.
-    const railTex = railTexture(layout.items, Math.max(H, 0.001));
+    const railTex = railTexture(items, Math.max(H, 0.001));
     const railSide = new THREE.MeshStandardMaterial({
       color: 0x22262d,
       roughness: 0.5,
@@ -319,8 +331,25 @@ export function createRackScene(canvas, opts) {
       rear.position.set(sx * (UNIT_W / 2 + 0.02), H / 2, -UNIT_D / 2 - 0.02);
       cabinet.add(rear);
     }
-    floorGroup.position.y = -0.36;
-    const d = Math.max(H, UNIT_W) * 0.85 + 3;
+    return cabinet;
+  }
+
+  // ── Rak tetangga (mode "Semua rak"): rak lain berjajar di kanan rak utama, satu ruangan ──
+  // Rak utama tetap di x = 0 (kabel, klik, detail); tetangga hanya kabinet + hardware (tanpa kabel).
+  const FRAME_X = UNIT_W / 2 + 0.68 + 0.45;
+  const RACK_PITCH = FRAME_X * 2 + 0.7 + 0.35; // lebar alas + celah kecil antar rak
+  let neighbors = []; // [{ group, tokens, H }]
+  let rackLabels = []; // sprite papan nama tiap rak
+  let mainName = opts.name ?? null;
+
+  const rowCount = () => 1 + neighbors.length;
+  const rowCenterX = () => ((rowCount() - 1) * RACK_PITCH) / 2;
+  const rowWidth = () => (rowCount() - 1) * RACK_PITCH + FRAME_X * 2 + 0.7;
+  const rowMaxH = () => Math.max(layout.totalH, ...neighbors.map((n) => n.H));
+
+  function updateRowLighting() {
+    const span = Math.max(rowMaxH(), rowWidth() / 2 + 1, UNIT_W);
+    const d = span * 0.85 + 3;
     Object.assign(key.shadow.camera, {
       left: -d,
       right: d,
@@ -328,8 +357,91 @@ export function createRackScene(canvas, opts) {
       bottom: -d,
     });
     key.shadow.camera.updateProjectionMatrix();
-    key.target.position.set(0, H / 2, 0);
-    world.add(cabinet);
+    const cx = rowCenterX();
+    key.position.set(10 + cx, 16, 11);
+    fill.position.set(-9 + cx, 7, -7);
+    key.target.position.set(cx, layout.totalH / 2, 0);
+    floorGroup.position.x = cx;
+  }
+
+  /** Papan nama di atas rak (CanvasTexture pada sprite). */
+  function makeLabel(text, x, H) {
+    const c = document.createElement("canvas");
+    c.width = 512;
+    c.height = 128;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(10,13,18,0.85)";
+    ctx.beginPath();
+    ctx.roundRect(8, 16, 496, 96, 48);
+    ctx.fill();
+    ctx.strokeStyle = "#a3c43a";
+    ctx.lineWidth = 5;
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 52px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 256, 66, 460);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, depthWrite: false }),
+    );
+    sp.scale.set(4.4, 1.1, 1);
+    sp.position.set(x, H + 1.5, 0);
+    return sp;
+  }
+
+  function rebuildLabels() {
+    for (const sp of rackLabels) {
+      world.remove(sp);
+      sp.material.map.dispose();
+      sp.material.dispose();
+    }
+    rackLabels = [];
+    if (!neighbors.length) return; // satu rak: tidak perlu papan nama
+    const add = (text, x, H) => {
+      const sp = makeLabel(text, x, H);
+      rackLabels.push(sp);
+      world.add(sp);
+    };
+    if (mainName) add(mainName, 0, layout.totalH);
+    neighbors.forEach(
+      (n, i) => n.nama && add(n.nama, (i + 1) * RACK_PITCH, n.H),
+    );
+  }
+
+  function clearNeighbors() {
+    for (const n of neighbors) {
+      for (const t of n.tokens) t.dead = true;
+      world.remove(n.group);
+      disposeObject(n.group);
+    }
+    neighbors = [];
+  }
+
+  /** list: [{ nama, slots }] — rak selain rak utama, urut kiri → kanan. */
+  function setNeighbors(list = [], name = mainName) {
+    mainName = name;
+    clearNeighbors();
+    (list ?? []).forEach((r, i) => {
+      const lay = layoutUnits(r.slots ?? [], { gap: GAP });
+      const group = new THREE.Group();
+      group.position.x = (i + 1) * RACK_PITCH;
+      group.add(makeCabinet(lay.items, lay.totalH));
+      const tokens = [];
+      for (const item of lay.items) {
+        const slot = r.slots.find((s) => s.key === item.key);
+        if (!slot) continue;
+        const e = buildUnit(slot, item, { parent: group, register: false });
+        for (const t of [e.texToken, e.glbToken]) if (t) tokens.push(t);
+      }
+      world.add(group);
+      neighbors.push({ group, tokens, H: lay.totalH, nama: r.nama });
+    });
+    baseDist = baseDistFor();
+    updateRowLighting();
+    rebuildLabels();
   }
 
   // ── Unit perangkat ──
@@ -415,7 +527,9 @@ export function createRackScene(canvas, opts) {
     return { group: g, mats };
   }
 
-  function buildUnit(slot, item) {
+  function buildUnit(slot, item, { parent = world, register = true } = {}) {
+    // Unit rak tetangga tidak masuk peta `units`: tidak ikut seleksi, x-ray, atau instalasi.
+    const live = () => register && !disposed;
     const h = Math.max(item.height - GAP, 0.2);
     // Kedalaman nyata perangkat (dimCm.d katalog): muka depan rata rel depan, belakangnya
     // tempat ujung kabel daya/NIC (lihat rackCabling.js).
@@ -437,7 +551,7 @@ export function createRackScene(canvas, opts) {
     group.add(mesh);
     group.position.set(0, item.yCenter, 0);
     group.userData.key = slot.key;
-    world.add(group);
+    parent.add(group);
     const entry = {
       group,
       frontMat: mats.front,
@@ -448,8 +562,10 @@ export function createRackScene(canvas, opts) {
       height: item.height,
       depth: dz,
     };
-    if (xray) applyXrayTo(entry.mats, XRAY_UNIT);
-    units.set(slot.key, entry);
+    if (register) {
+      if (xray) applyXrayTo(entry.mats, XRAY_UNIT);
+      units.set(slot.key, entry);
+    }
     // Model 3D (.glb) bila hardware ini punya; kotak tetap tampil sampai model selesai dimuat
     // dan menjadi cadangan bila gagal. Kotak yang disembunyikan tetap ikut raycast (klik/pilih).
     const glbUrl = !slot.auto && slot.id ? rackModelUrl(slot.id) : null;
@@ -464,6 +580,7 @@ export function createRackScene(canvas, opts) {
           mesh.visible = false;
           entry.glbMats = res.materials;
           entry.mats.push(...res.materials);
+          if (!live()) return;
           if (xray && !installState) applyXrayTo(res.materials, XRAY_UNIT);
           // Pertahankan keadaan unit yang sedang dipilih / animasi instalasi.
           if (selectedKey === slot.key)
@@ -483,7 +600,7 @@ export function createRackScene(canvas, opts) {
       // Highlight hanya ke perangkatnya (glbMats diisi setelah model dimuat), bukan ke tatakan.
       entry.glbMats = [];
       entry.mats.push(...shelf.mats);
-      if (xray && !installState) applyXrayTo(shelf.mats, XRAY_UNIT);
+      if (register && xray && !installState) applyXrayTo(shelf.mats, XRAY_UNIT);
       const token = { dead: false };
       entry.glbToken = token;
       const fit = shelfFit(slot) ?? {
@@ -515,6 +632,7 @@ export function createRackScene(canvas, opts) {
         group.add(res.object);
         entry.glbMats.push(...res.materials);
         entry.mats.push(...res.materials);
+        if (!live()) return;
         if (xray && !installState) applyXrayTo(res.materials, XRAY_UNIT);
         if (selectedKey === slot.key) setEmissive(entry, entry.baseColor, 0.45);
         if (installState) applyInstall();
@@ -688,6 +806,12 @@ export function createRackScene(canvas, opts) {
       if (m.aKey === key || m.bKey === key) updateCableGeom(m);
   }
 
+  /** Opsi planRackCables dari meta kabel rak: kabel manual + kabel perangkat ujung. */
+  function cablingOpts() {
+    const r = resolveCabling(slots, cabMeta);
+    return { data: r.data, manual: r.all };
+  }
+
   function buildCables() {
     if (cablesGroup) {
       world.remove(cablesGroup);
@@ -698,7 +822,8 @@ export function createRackScene(canvas, opts) {
     const H = layout.totalH;
     managers = buildManagers(H);
     cablesGroup.add(managers);
-    const cabling = rackCabling(slots);
+    // Mode kabel data dari meta rak (auto / manual); daya selalu otomatis.
+    const cabling = rackCabling(slots, undefined, cablingOpts());
     const { cables } = cabling;
     const audit = auditRackCables(slots, cabling);
     focusIds = null;
@@ -747,6 +872,9 @@ export function createRackScene(canvas, opts) {
       cableMeshes.set(c.id, m);
       updateCableGeom(m);
     }
+    buildPortLeds(cables);
+    buildExitClouds(cables);
+    buildEndZones(cables);
     cableList = cables.map(({ points, ...c }) => ({
       ...c,
       status: audit.status[c.id] ?? "ok",
@@ -760,6 +888,343 @@ export function createRackScene(canvas, opts) {
       score: audit.score,
       summary: audit.summary,
     });
+  }
+
+  // ── LED port: port data yang tercolok menyala hijau dan berkedip (aktivitas link) ──
+  let portLeds = []; // { mesh, mat, lane, cableId, on, next }
+  const ledGeo = new THREE.BoxGeometry(0.05, 0.035, 0.02);
+  ledGeo.userData.shared = true; // dipakai bersama; jangan ikut dibuang saat unit dihapus
+  const LED_ON = new THREE.Color(0x4dff7a);
+  const LED_OFF = new THREE.Color(0x0f2a16);
+
+  function clearPortLeds() {
+    for (const l of portLeds) {
+      l.mesh.parent?.remove(l.mesh);
+      l.mat.dispose();
+    }
+    portLeds = [];
+  }
+
+  function buildPortLeds(cables) {
+    clearPortLeds();
+    const slotBy = new Map(slots.map((s) => [s.key, s]));
+    for (const c of cables) {
+      const lane = CABLE_KINDS[c.kind]?.lane;
+      if (lane === "power" || c.points.length < 2) continue;
+      for (const end of [c.a, c.b]) {
+        if (!end?.key) continue;
+        const entry = units.get(end.key);
+        const slot = slotBy.get(end.key);
+        const p = slot && profileOf(slot).ports.find((x) => x.id === end.port);
+        if (!entry || !p) continue;
+        const mat = new THREE.MeshStandardMaterial({
+          color: LED_ON,
+          emissive: LED_ON,
+          emissiveIntensity: 2.2,
+          roughness: 0.3,
+        });
+        const mesh = new THREE.Mesh(ledGeo, mat);
+        const front = p.side === "front";
+        // Pojok kiri atas lubang port (seperti LED link/aktivitas switch sungguhan).
+        const z = front
+          ? UNIT_D / 2 + 0.012
+          : UNIT_D / 2 - (entry.depth ?? UNIT_D) - 0.012;
+        mesh.position.set(
+          p.fx * UNIT_W + (front ? -0.06 : 0.06),
+          (p.fy - 0.5) * entry.height + 0.11,
+          z,
+        );
+        mesh.userData.led = true;
+        entry.group.add(mesh);
+        portLeds.push({ mesh, mat, lane, cableId: c.id, on: true, next: 0 });
+      }
+    }
+  }
+
+  // ── Awan "ISP / internet" di ujung kabel data yang keluar lewat atap rak ──
+  let exitClouds = []; // { group, ids, base }
+  const cloudGeo = new THREE.SphereGeometry(1, 20, 14);
+  cloudGeo.userData.shared = true;
+  // Gumpalan bola membentuk awan (x, y, z, radius) — relatif terhadap pusat awan.
+  const PUFFS = [
+    [0, 0.12, 0, 0.62],
+    [-0.62, -0.05, 0.05, 0.46],
+    [0.62, -0.04, -0.04, 0.5],
+    [-0.28, 0.42, -0.08, 0.42],
+    [0.3, 0.38, 0.1, 0.44],
+    [-1.02, -0.16, 0, 0.3],
+    [1.06, -0.15, 0.02, 0.32],
+    [0, -0.22, 0.28, 0.42],
+    [0, -0.2, -0.3, 0.4],
+  ];
+
+  function buildExitClouds(cables) {
+    exitClouds = [];
+    // Kelompokkan per tujuan (label) dan sisi rak; kabel fiber feeder tetap tanpa awan.
+    const groups = new Map();
+    for (const c of cables) {
+      if (!c.b?.exit || c.b.exit !== "top" || c.points.length < 2) continue;
+      if (CABLE_KINDS[c.kind]?.lane !== "data" || c.endDevice) continue;
+      const end = c.points[c.points.length - 1];
+      const k = `${c.b.label}|${end[2] > 0 ? "f" : "r"}`;
+      const g = groups.get(k) ?? { label: c.b.label, ids: [], pts: [] };
+      g.ids.push(c.id);
+      g.pts.push(end);
+      groups.set(k, g);
+    }
+    for (const g of groups.values()) {
+      const avg = [0, 1, 2].map(
+        (i) => g.pts.reduce((s, p) => s + p[i], 0) / g.pts.length,
+      );
+      const top = Math.max(...g.pts.map((p) => p[1]));
+      const cloud = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({
+        color: 0xeef4ff,
+        emissive: 0x6f8fd6,
+        emissiveIntensity: 0.18,
+        roughness: 0.95,
+        metalness: 0,
+        transparent: true,
+        opacity: 0.94,
+      });
+      for (const [x, y, z, r] of PUFFS) {
+        const m = new THREE.Mesh(cloudGeo, mat);
+        m.position.set(x, y, z);
+        m.scale.setScalar(r);
+        m.castShadow = true;
+        cloud.add(m);
+      }
+      // Bagian bawah awan menutup ujung kabel supaya kabel terlihat "masuk" ke awan.
+      const base = [avg[0], top + 0.32, avg[2]];
+      cloud.position.set(...base);
+      const label = makeLabel(g.label || "ISP", 0, 0);
+      label.scale.set(3.2, 0.8, 1);
+      label.position.set(0, 1.25, 0);
+      label.renderOrder = 5;
+      cloud.add(label);
+      cablesGroup.add(cloud);
+      exitClouds.push({ group: cloud, ids: g.ids, base });
+    }
+  }
+
+  // ── Penanda zona perangkat ujung (CCTV, PC, AP, …) di ujung kabel horizontal ──
+  const ZONE_COLOR = {
+    cctv: "#e0564f",
+    ap: "#3b82d6",
+    phone: "#7c5fc4",
+    pc: "#2a9d5c",
+    printer: "#c98a0b",
+    other: "#8a93a6",
+  };
+  const ZONE_LABEL = {
+    cctv: "CCTV",
+    ap: "AP",
+    phone: "IP Phone",
+    pc: "PC",
+    printer: "Printer",
+    other: "Perangkat",
+  };
+
+  function zoneSprite(text, color) {
+    const c = document.createElement("canvas");
+    c.width = 640;
+    c.height = 128;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(10,13,18,0.9)";
+    ctx.beginPath();
+    ctx.roundRect(8, 14, 624, 100, 22);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.roundRect(8, 14, 30, 100, [22, 0, 0, 22]);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 5;
+    ctx.beginPath();
+    ctx.roundRect(8, 14, 624, 100, 22);
+    ctx.stroke();
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 46px system-ui, sans-serif";
+    ctx.textBaseline = "middle";
+    ctx.fillText(text, 60, 66, 556);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, depthWrite: false }),
+    );
+    sp.scale.set(3.4, 0.68, 1);
+    sp.renderOrder = 5;
+    return sp;
+  }
+
+  function buildEndZones(cables) {
+    const byId = new Map((cabMeta?.endDevices ?? []).map((d) => [d.id, d]));
+    const groups = new Map();
+    for (const c of cables) {
+      if (!c.endDevice || !c.b?.exit || c.points.length < 2) continue;
+      const end = c.points[c.points.length - 1];
+      const k = `${c.b.label}|${end[2] >= 0 ? "f" : "r"}`;
+      const g = groups.get(k) ?? {
+        label: c.b.label,
+        ids: [],
+        pts: [],
+        devs: new Set(),
+      };
+      g.ids.push(c.id);
+      g.pts.push(end);
+      g.devs.add(c.endDevice);
+      groups.set(k, g);
+    }
+    const slotBy = new Map(slots.map((s) => [s.key, s]));
+    const ipOf = cabMeta?.endIps instanceof Map ? cabMeta.endIps : new Map();
+    for (const g of groups.values()) {
+      const type = byId.get([...g.devs][0])?.type ?? "other";
+      const color = ZONE_COLOR[type] ?? ZONE_COLOR.other;
+      const zone = new THREE.Group();
+      // Satu kotak per perangkat di ujung kabelnya, dengan papan nama: nama, IP, port switch.
+      const boxMat = new THREE.MeshStandardMaterial({
+        color: 0xe8ebf0,
+        roughness: 0.6,
+        emissive: color,
+        emissiveIntensity: 0.18,
+      });
+      const faceMat = new THREE.MeshStandardMaterial({ color, roughness: 0.5 });
+      const pts = [];
+      for (const id of g.ids) {
+        const c = cables.find((x) => x.id === id);
+        const d = byId.get(c.endDevice);
+        const endPt = c.points[c.points.length - 1];
+        const cy = endPt[1] - END_BOX_H / 2;
+        const box = new THREE.Mesh(
+          new THREE.BoxGeometry(0.62, END_BOX_H, 0.34),
+          boxMat,
+        );
+        box.position.set(endPt[0], cy, endPt[2]);
+        box.castShadow = true;
+        zone.add(box);
+        const face = new THREE.Mesh(
+          new THREE.BoxGeometry(0.4, 0.2, 0.02),
+          faceMat,
+        );
+        face.position.set(
+          endPt[0],
+          cy,
+          endPt[2] + (endPt[2] >= 0 ? 0.18 : -0.18),
+        );
+        zone.add(face);
+        const info = ipOf.get(c.endDevice);
+        const sw = d && slotBy.get(d.sw.key);
+        const port = sw && profileOf(sw).ports.find((p) => p.id === d.sw.port);
+        const tag = deviceTag(
+          d?.nama || g.label,
+          info?.ip
+            ? `${info.ip}${d?.vlan != null ? ` · VLAN ${d.vlan}` : ""}`
+            : d?.vlan != null
+              ? `VLAN ${d.vlan} · IP belum ada`
+              : "IP belum diatur",
+          sw ? `← ${short(sw.nama, 16)} · ${port?.label ?? d.sw.port}` : "",
+          color,
+        );
+        tag.position.set(
+          endPt[0],
+          cy - 0.56,
+          endPt[2] + (endPt[2] >= 0 ? 0.3 : -0.3),
+        );
+        zone.add(tag);
+        pts.push(endPt);
+      }
+      // Judul grup di atas tray.
+      const xs = pts.map((p) => p[0]);
+      const head = zoneSprite(
+        `${ZONE_LABEL[type] ?? "Perangkat"} · ${g.label} ×${g.devs.size}`,
+        color,
+      );
+      head.position.set(
+        (Math.min(...xs) + Math.max(...xs)) / 2,
+        Math.max(...pts.map((p) => p[1])) + 1.75,
+        // Baris terdekat rak.
+        pts.reduce(
+          (m, p) => (Math.abs(p[2]) < Math.abs(m) ? p[2] : m),
+          pts[0][2],
+        ),
+      );
+      zone.add(head);
+      cablesGroup.add(zone);
+      exitClouds.push({
+        group: zone,
+        ids: g.ids,
+        base: [0, 0, 0],
+        still: true,
+      });
+    }
+  }
+
+  const short = (s, n) => (s.length > n ? s.slice(0, n - 1) + "…" : s);
+
+  /** Papan nama kecil perangkat ujung (3 baris: nama, IP · VLAN, port switch). */
+  function deviceTag(nama, ipLine, portLine, color) {
+    const c = document.createElement("canvas");
+    c.width = 384;
+    c.height = 168;
+    const ctx = c.getContext("2d");
+    ctx.fillStyle = "rgba(10,13,18,0.92)";
+    ctx.beginPath();
+    ctx.roundRect(4, 4, 376, 160, 16);
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 4;
+    ctx.stroke();
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = "#ffffff";
+    ctx.font = "700 38px system-ui, sans-serif";
+    ctx.fillText(short(nama, 18), 18, 40, 348);
+    ctx.fillStyle = "#b8f36b";
+    ctx.font = "600 32px ui-monospace, Menlo, Consolas, monospace";
+    ctx.fillText(ipLine, 18, 88, 348);
+    ctx.fillStyle = "#a7b0c0";
+    ctx.font = "500 26px system-ui, sans-serif";
+    ctx.fillText(portLine, 18, 134, 348);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sp = new THREE.Sprite(
+      new THREE.SpriteMaterial({ map: tex, depthWrite: false }),
+    );
+    sp.scale.set(1.75, 0.765, 1);
+    sp.renderOrder = 6;
+    return sp;
+  }
+
+  function updateExitClouds(now) {
+    for (const c of exitClouds) {
+      c.group.visible =
+        !installState &&
+        showCables &&
+        !!laneOn.data &&
+        c.ids.some((id) => cableMeshes.get(id)?.tube.visible !== false);
+      if (!reduceMotion && !c.still)
+        c.group.position.y =
+          c.base[1] + Math.sin(now / 1400 + c.base[2]) * 0.06;
+    }
+  }
+
+  function updatePortLeds(now) {
+    updateExitClouds(now);
+    for (const l of portLeds) {
+      const m = cableMeshes.get(l.cableId);
+      l.mesh.visible =
+        !installState &&
+        showCables &&
+        !!laneOn[l.lane] &&
+        (!m || m.tube.visible);
+      if (!l.mesh.visible || reduceMotion) continue;
+      if (now < l.next) continue;
+      // Kedipan tidak beraturan seperti trafik: kebanyakan menyala, sesekali padam singkat.
+      l.on = !l.on || Math.random() < 0.35;
+      l.next =
+        now + (l.on ? 60 + Math.random() * 420 : 35 + Math.random() * 90);
+      l.mat.emissive.copy(l.on ? LED_ON : LED_OFF);
+      l.mat.color.copy(l.on ? LED_ON : LED_OFF);
+    }
   }
 
   /** Arahkan kamera ke sekumpulan kabel (dari daftar temuan). */
@@ -925,7 +1390,22 @@ export function createRackScene(canvas, opts) {
   }
 
   function baseDistFor() {
-    return Math.max(10, layout.totalH * 1.12);
+    const single = Math.max(10, layout.totalH * 1.12);
+    if (!neighbors.length) return single;
+    // Deretan rak: jarak agar seluruh lebar deretan + sedikit ruang masuk bingkai.
+    const tanV = Math.tan((camera.fov * Math.PI) / 360);
+    const fitW = (rowWidth() * 0.62) / (tanV * Math.max(camera.aspect, 0.4));
+    return Math.max(single, rowMaxH() * 1.12, fitW);
+  }
+
+  /** Preset kamera, digeser ke tengah deretan rak bila ada rak tetangga. */
+  function presetFor(name) {
+    const p = cameraPreset(name, { centerY: rowMaxH() / 2, dist: baseDist });
+    const cx = rowCenterX();
+    return {
+      position: [p.position[0] + cx, p.position[1], p.position[2]],
+      target: [p.target[0] + cx, p.target[1], p.target[2]],
+    };
   }
 
   function pullUnit(key, toZ) {
@@ -1039,6 +1519,7 @@ export function createRackScene(canvas, opts) {
     }
     buildCables();
     if (installState) applyInstall();
+    if (portPick) buildPortMarkers();
   }
 
   // ── Mode animasi instalasi (dikendalikan InstallStage3D lewat setInstall) ──
@@ -1214,10 +1695,8 @@ export function createRackScene(canvas, opts) {
   }
 
   function setView(name) {
-    const { position, target } = cameraPreset(name, {
-      centerY,
-      dist: baseDist,
-    });
+    baseDist = baseDistFor();
+    const { position, target } = presetFor(name);
     tweenCam(position, target, 900);
   }
 
@@ -1258,6 +1737,81 @@ export function createRackScene(canvas, opts) {
     }
   }
 
+  // ── Mode pasang kabel: titik port data yang bisa diklik (rak utama saja) ──
+  let portPick = false;
+  let portSel = null; // { key, port } ujung A yang sedang dipilih
+  let portMarkers = [];
+  const MARK_FREE = 0x7ee03a;
+  const MARK_USED = 0x5b6270;
+  const MARK_SEL = 0xffd23f;
+  const markGeo = new THREE.SphereGeometry(0.1, 12, 8);
+  markGeo.userData.shared = true;
+
+  function clearPortMarkers() {
+    for (const m of portMarkers) {
+      m.parent?.remove(m);
+      m.material.dispose();
+    }
+    portMarkers = [];
+  }
+
+  function buildPortMarkers() {
+    clearPortMarkers();
+    if (!portPick) return;
+    const used = new Set(cabMeta?.reserved ?? []);
+    for (const c of cableList) {
+      if (c.lane === "power") continue;
+      used.add(`${c.a.key}:${c.a.port}`);
+      if (c.b?.key) used.add(`${c.b.key}:${c.b.port}`);
+    }
+    for (const s of slots) {
+      const entry = units.get(s.key);
+      if (!entry || s.auto) continue;
+      for (const p of dataPortsOf(s)) {
+        const id = `${s.key}:${p.id}`;
+        const sel = portSel && portSel.key === s.key && portSel.port === p.id;
+        const free = !used.has(id);
+        const mat = new THREE.MeshBasicMaterial({
+          color: sel ? MARK_SEL : free ? MARK_FREE : MARK_USED,
+          transparent: !free && !sel,
+          opacity: free || sel ? 1 : 0.55,
+          depthTest: false,
+        });
+        const m = new THREE.Mesh(markGeo, mat);
+        m.renderOrder = 10;
+        const h = entry.height;
+        const z =
+          p.side === "front"
+            ? UNIT_D / 2 + 0.08
+            : UNIT_D / 2 - (entry.depth ?? UNIT_D) - 0.08;
+        m.position.set(p.fx * UNIT_W, (p.fy - 0.5) * h, z);
+        if (sel) m.scale.setScalar(1.5);
+        m.userData.portOf = {
+          key: s.key,
+          port: p.id,
+          label: `${s.nama} · ${p.label}`,
+          used: !free,
+        };
+        entry.group.add(m); // ikut unit saat ditarik keluar / digeser
+        portMarkers.push(m);
+      }
+    }
+  }
+
+  /** Nyalakan/matikan mode pasang kabel; `sel` = port A yang sedang dipilih (disorot). */
+  function setPortPick(on, sel = null) {
+    portPick = !!on;
+    portSel = sel;
+    buildPortMarkers();
+  }
+
+  /** Port di bawah kursor (untuk tooltip). */
+  function portAt(clientX, clientY) {
+    if (!portPick) return null;
+    const hit = pickAt(clientX, clientY);
+    return hit?.port ?? null;
+  }
+
   // ── Klik (raycast) + hover ──
   function pickAt(clientX, clientY) {
     const rect = canvas.getBoundingClientRect();
@@ -1266,9 +1820,15 @@ export function createRackScene(canvas, opts) {
       -((clientY - rect.top) / rect.height) * 2 + 1,
     );
     raycaster.setFromCamera(ndc, camera);
+    if (portPick) {
+      const ph = raycaster.intersectObjects(portMarkers, false);
+      return ph.length ? { port: { ...ph[0].object.userData.portOf } } : null;
+    }
     const meshes = [];
     for (const entry of units.values()) meshes.push(entry.group);
-    const hits = raycaster.intersectObjects(meshes, true);
+    const hits = raycaster
+      .intersectObjects(meshes, true)
+      .filter((h) => !h.object.userData.portOf);
     let unitKey = null;
     let unitDist = Infinity;
     if (hits.length) {
@@ -1323,6 +1883,11 @@ export function createRackScene(canvas, opts) {
       downPos = null;
       if (quick && dx * dx + dy * dy < 36) {
         const hit = pickAt(e.clientX, e.clientY);
+        if (portPick) {
+          // Mode pasang kabel: hanya klik pada titik port yang dihitung.
+          if (hit?.port) opts.onPortPick?.(hit.port);
+          return;
+        }
         if (hit?.cable) {
           selectCable(hit.cable);
           opts.onSelectCable?.(hit.cable);
@@ -1351,6 +1916,7 @@ export function createRackScene(canvas, opts) {
     if (disposed) return;
     const now = performance.now();
     stepTweens(now);
+    updatePortLeds(now);
     if (!xrMode) {
       controls.autoRotate = wantAuto && !camTween;
       controls.update();
@@ -1382,11 +1948,10 @@ export function createRackScene(canvas, opts) {
   // ── Init ──
   setSlots(opts.slots ?? [], { animate: false });
   resize();
+  if (opts.neighbors?.length) setNeighbors(opts.neighbors, opts.name);
   {
-    const { position, target } = cameraPreset("perspektif", {
-      centerY,
-      dist: baseDist,
-    });
+    baseDist = baseDistFor();
+    const { position, target } = presetFor("perspektif");
     camera.position.set(...position);
     controls.target.set(...target);
     controls.update();
@@ -1449,6 +2014,17 @@ export function createRackScene(canvas, opts) {
   return {
     getXr,
     setSlots: (s, o) => setSlots(s, o),
+    setPortPick,
+    portAt,
+    /** Ganti mode / daftar kabel manual lalu gambar ulang kabel. */
+    setCabling: (c) => {
+      cabMeta = c ?? {};
+      buildCables();
+      if (installState) applyInstall();
+      if (portPick) buildPortMarkers();
+    },
+    /** Rak lain di ruangan yang sama: [{ nama, slots }], berjajar ke kanan rak utama. */
+    setNeighbors: (list, name) => setNeighbors(list, name),
     setBadges: (map) => {
       badgeEls.clear();
       for (const [k, el] of map) badgeEls.set(k, el);

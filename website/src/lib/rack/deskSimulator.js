@@ -427,22 +427,57 @@ export function clampPosition(desk, it, x, y) {
   };
 }
 
-/** Pindahkan item (snap + jepit) lalu nilai ulang. */
+/** True bila `it` (pada posisinya sekarang) menabrak item lain di `items`. */
+function collides(items, it) {
+  return items.some((o) => o.key !== it.key && itemsOverlap(it, o));
+}
+
+/**
+ * Posisi valid terdekat untuk item: tidak keluar papan dan tidak menumpuk item lain.
+ * Bila target bentrok, coba geser sepanjang satu sumbu saja (menyusur tepi item lain);
+ * bila tetap bentrok, tetap di posisi `from` (default: posisi item sekarang).
+ */
+export function resolveDeskPosition(result, key, x, y, from = null) {
+  const it = result.items.find((i) => i.key === key);
+  if (!it) return { x, y };
+  const cur = from ?? { x: it.x, y: it.y };
+  const p = clampPosition(result.desk, it, snapTo(x), snapTo(y));
+  const free = (px, py) => !collides(result.items, { ...it, x: px, y: py });
+  if (free(p.x, p.y)) return p;
+  if (free(p.x, cur.y)) return { x: p.x, y: cur.y };
+  if (free(cur.x, p.y)) return { x: cur.x, y: p.y };
+  return { x: cur.x, y: cur.y };
+}
+
+/** True bila item `key` yang ditaruh di (x, y) akan menumpuk item lain. */
+export function wouldOverlapAt(result, key, x, y) {
+  const it = result.items.find((i) => i.key === key);
+  if (!it) return false;
+  return collides(result.items, { ...it, x, y });
+}
+
+/** Pindahkan item (snap + jepit, tanpa tumpang tindih) lalu nilai ulang. */
 export function moveDeskItem(result, key, x, y) {
   const it = result.items.find((i) => i.key === key);
   if (!it) return result;
-  const p = clampPosition(result.desk, it, snapTo(x), snapTo(y));
+  const p = resolveDeskPosition(result, key, x, y);
+  if (p.x === it.x && p.y === it.y) return result;
   const items = result.items.map((i) =>
     i.key === key ? { ...i, x: p.x, y: p.y } : i,
   );
   return { ...evaluateDeskLayout(result.desk, items), manual: true };
 }
 
-/** Putar item 90° (tukar lebar/kedalaman) di tempat. */
+/** Putar item 90° (tukar lebar/kedalaman) di tempat; batal bila hasilnya menabrak item lain. */
 export function rotateDeskItem(result, key) {
-  const items = result.items.map((i) =>
-    i.key === key ? { ...i, w: i.d, d: i.w, rot: i.rot ? 0 : 90 } : i,
-  );
+  const it = result.items.find((i) => i.key === key);
+  if (!it) return result;
+  const turned = { ...it, w: it.d, d: it.w, rot: it.rot ? 0 : 90 };
+  const p = clampPosition(result.desk, turned, it.x, it.y);
+  turned.x = p.x;
+  turned.y = p.y;
+  if (collides(result.items, turned)) return result;
+  const items = result.items.map((i) => (i.key === key ? turned : i));
   return { ...evaluateDeskLayout(result.desk, items), manual: true };
 }
 

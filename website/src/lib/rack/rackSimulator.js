@@ -4,6 +4,7 @@
 import { MODEL_CATALOG } from "./hardwareModels.js";
 import { rackCabling, cableBom, onShelf, shelfUnits } from "./rackCabling.js";
 import { auditRackCables } from "./rackCableAudit.js";
+import { resolveCabling } from "./cabling/manualCabling.js";
 
 // ─── Katalog Hardware ────────────────────────────────────────────────
 export const HARDWARE_CATALOG = [
@@ -1003,7 +1004,11 @@ export function generateRackLayout(rackU, selectedItems) {
  * Dipakai multi-rak untuk memindah unit antar rak tanpa mengacak urutan manual.
  */
 export function layoutFromUnits(rackU, unitsTopDown) {
-  const slots = unitsTopDown.map((u, i) => ({ ...u, key: u.key ?? `u${i}`, auto: false }));
+  const slots = unitsTopDown.map((u, i) => ({
+    ...u,
+    key: u.key ?? `u${i}`,
+    auto: false,
+  }));
   const used = slots.reduce((s, u) => s + u.unitHeight, 0);
   for (let i = 0; i < Math.max(0, rackU - used); i++) {
     slots.push({
@@ -1047,7 +1052,7 @@ export function moveSlot(result, from, to) {
  * statistik, skor, peringatan, rute kabel, langkah instalasi.
  * Dipakai untuk susunan awal AI maupun susunan hasil seret manual.
  */
-export function evaluateLayout(rackU, slotsIn) {
+export function evaluateLayout(rackU, slotsIn, cab = {}) {
   const slots = slotsIn.map((s, i) =>
     s.key == null ? { ...s, key: `k${i}` } : s,
   );
@@ -1162,7 +1167,16 @@ export function evaluateLayout(rackU, slotsIn) {
   const cableRoutes = buildCableRoutes(slots);
   // Kabel per sambungan (port → port) beserta panjang dari jalurnya di rak. `points` tidak disimpan
   // (dihitung ulang oleh scene 3D) supaya data project tetap ringan.
-  const cabling = rackCabling(slots);
+  // Mode kabel data: "auto" (direncanakan) atau "manual" (daftar user, dibersihkan dulu).
+  const cabOpts = resolveCabling(slots, cab);
+  const cabling = rackCabling(slots, undefined, { data: cabOpts.data, manual: cabOpts.all });
+  for (const d of cabOpts.dropped)
+    cabling.unconnected.push({
+      key: d.cable?.a?.key ?? "-",
+      port: d.cable?.a?.port ?? "-",
+      nama: `Kabel manual ${d.cable?.id ?? ""}`.trim(),
+      alasan: `Dilepas: ${d.alasan}`,
+    });
   // Cek kerapian & keamanan kabel (skor terpisah dari skor layout).
   const audit = auditRackCables(slots, cabling);
   const cables = cabling.cables.map(({ points, ...c }) => ({
@@ -1195,6 +1209,9 @@ export function evaluateLayout(rackU, slotsIn) {
     cableSummary,
     cableShoppingList,
     installSteps,
+    dataCabling: cabOpts.data,
+    manualCables: cabOpts.manual,
+    endDevices: cabOpts.endDevices,
   };
 }
 

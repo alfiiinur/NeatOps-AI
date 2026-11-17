@@ -1,9 +1,9 @@
 // Router murni (tanpa DOM): memetakan pathname <-> tampilan.
 //   /                          -> landing
 //   /project/<id>              -> project, page "home" (Analisis)
-//   /project/<id>/<tab>        -> project, tab: hardware | config | rakit | calculator
+//   /project/<id>/<tab>        -> project, tab: hardware | config | rakit | vlan | calculator
 
-export const TABS = ["hardware", "config", "rakit", "calculator"];
+export const TABS = ["hardware", "config", "rakit", "vlan", "calculator"];
 
 /** @returns {{view: "landing"|"project"|"notfound", projectId: string|null, page: string}} */
 export function parsePath(pathname) {

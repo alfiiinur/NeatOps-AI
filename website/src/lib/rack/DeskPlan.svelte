@@ -1,7 +1,7 @@
 <script>
   // Denah atas meja kerja (top-down) berskala cm. Item bisa diseret / digeser dengan keyboard.
   // result: hasil generateDeskLayout/evaluateDeskLayout. onChange(next) dipanggil setelah dipindah/diputar.
-  import { moveDeskItem, rotateDeskItem, snapTo } from "./deskSimulator.js";
+  import { moveDeskItem, rotateDeskItem, snapTo, wouldOverlapAt } from "./deskSimulator.js";
 
   let { result, onChange = () => {}, readonly = false, onNote = () => {} } = $props();
 
@@ -18,6 +18,7 @@
       .map((i) => (live && live.key === i.key ? { ...i, x: live.x, y: live.y } : i))
       .sort((a, b) => a.z - b.z || a.key.localeCompare(b.key)),
   );
+  const liveBlocked = $derived(live ? wouldOverlapAt(result, live.key, live.x, live.y) : false);
   const sel = $derived(result.items.find((i) => i.key === selected) ?? null);
 
   function toCm(e) {
@@ -48,6 +49,7 @@
     const it = result.items.find((i) => i.key === drag.key);
     if (!it) return;
     const p = toCm(e);
+    // Selama diseret bebas melewati item lain; hanya jepit ke papan meja.
     const x = Math.max(0, Math.min(desk.w - it.w, snapTo(p.x - drag.dx)));
     const y = Math.max(0, Math.min(desk.d - it.d, snapTo(p.y - drag.dy)));
     live = { key: drag.key, x, y };
@@ -59,7 +61,9 @@
     window.removeEventListener("pointercancel", onUp);
     if (drag && live) {
       const it = result.items.find((i) => i.key === drag.key);
-      if (it && (live.x !== it.x || live.y !== it.y)) {
+      if (it && wouldOverlapAt(result, live.key, live.x, live.y)) {
+        onNote(`${it.nama} tidak bisa ditaruh di situ karena menumpuk item lain, dikembalikan.`);
+      } else if (it && (live.x !== it.x || live.y !== it.y)) {
         const next = moveDeskItem(result, live.key, live.x, live.y);
         onChange(next);
         onNote(`${it.nama} dipindah ke ${Math.round(live.x)}, ${Math.round(live.y)} cm.`);
@@ -81,8 +85,12 @@
   function rotate(key) {
     if (readonly || !key) return;
     const next = rotateDeskItem(result, key);
-    onChange(next);
     const n = next.items.find((i) => i.key === key);
+    if (next === result) {
+      if (n) onNote(`${n.nama} tidak bisa diputar karena akan menabrak item lain.`);
+      return;
+    }
+    onChange(next);
     if (n) onNote(`${n.nama} diputar ${n.rot ? "90°" : "kembali ke 0°"}.`);
   }
 
@@ -130,7 +138,7 @@
     {#each shown as it (it.key)}
       <g
         class="dp-item"
-        class:problem={it.problem}
+        class:problem={it.problem || (liveBlocked && drag?.key === it.key)}
         class:selected={selected === it.key}
         class:dragging={drag?.key === it.key}
         class:ro={readonly}
@@ -149,8 +157,8 @@
           rx="1"
           fill={it.color}
           fill-opacity={it.z > 0 ? 0.85 : 0.6}
-          stroke={it.problem ? "var(--bad, #d23a40)" : it.color}
-          stroke-width={it.problem ? 0.9 : 0.5}
+          stroke={it.problem || (liveBlocked && drag?.key === it.key) ? "var(--bad, #d23a40)" : it.color}
+          stroke-width={it.problem || (liveBlocked && drag?.key === it.key) ? 0.9 : 0.5}
         />
         {#if showLabel(it)}
           <text x={it.x + it.w / 2} y={it.y + it.d / 2 + fontOf(it) / 3} text-anchor="middle" font-size={fontOf(it)} class="dp-label">

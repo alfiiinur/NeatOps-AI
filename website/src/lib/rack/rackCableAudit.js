@@ -50,7 +50,15 @@ function samplePath(pts, geo) {
     const dir = L ? d.map((x) => x / L) : [0, 0, 0];
     for (let k = 0; k < n; k++) {
       const t = k / n;
-      out.push({ p: [P[i - 1][0] + d[0] * t, P[i - 1][1] + d[1] * t, P[i - 1][2] + d[2] * t], dir, step: L / n });
+      out.push({
+        p: [
+          P[i - 1][0] + d[0] * t,
+          P[i - 1][1] + d[1] * t,
+          P[i - 1][2] + d[2] * t,
+        ],
+        dir,
+        step: L / n,
+      });
     }
   }
   return out;
@@ -82,7 +90,9 @@ function parallelRuns(aSamples, othersSamples, sepM) {
           if (!list) continue;
           for (const { q, idx } of list) {
             if (hit.has(idx) || len(sub(s.p, q.p)) > sepM) continue;
-            const dot = Math.abs(s.dir[0] * q.dir[0] + s.dir[1] * q.dir[1] + s.dir[2] * q.dir[2]);
+            const dot = Math.abs(
+              s.dir[0] * q.dir[0] + s.dir[1] * q.dir[1] + s.dir[2] * q.dir[2],
+            );
             if (dot > 0.9) hit.add(idx);
           }
         }
@@ -93,7 +103,9 @@ function parallelRuns(aSamples, othersSamples, sepM) {
 
 /** Panjang (m) dua kabel berjalan sejajar dalam jarak `sepM`. */
 export function parallelRunM(a, b, { sepM = 0.05, geo = RACK_GEO } = {}) {
-  return parallelRuns(samplePath(a, geo), [samplePath(b, geo)], sepM).get(0) ?? 0;
+  return (
+    parallelRuns(samplePath(a, geo), [samplePath(b, geo)], sepM).get(0) ?? 0
+  );
 }
 // ─── Pemeriksaan ─────────────────────────────────────────────────────
 /**
@@ -124,12 +136,23 @@ export function auditRackCables(slots, cabling, geo = RACK_GEO) {
 
   // 1. Radius tekuk pada patch cord langsung antar unit bersebelahan (tekukan U setinggi jarak port).
   //    Kabel lewat kanal / cable manager punya ruang lengkung lebar, jadi tidak diperiksa di sini.
-  //    Fiber: di bawah minimum = kritis. Tembaga/daya lebih lentur: ditandai bila < 75% minimum.
+  //    Fiber: di bawah minimum = kritis. Tembaga/daya lebih lentur: satu kabel ditandai bila < 75%
+  //    minimum; bundel (≥ 6 kabel langsung antar dua unit yang sama) saling menekan, jadi dinilai
+  //    terhadap minimum penuh.
   const bendBad = new Map();
+  const pairCount = new Map();
+  for (const c of cables)
+    if (c.route === "direct")
+      pairCount.set(
+        `${c.aKey}|${c.bKey}`,
+        (pairCount.get(`${c.aKey}|${c.bKey}`) ?? 0) + 1,
+      );
   for (const c of cables) {
     const phys = CABLE_PHYS[c.kind];
     if (!phys || c.route !== "direct" || c.bendMm == null) continue;
-    const limit = c.lane === "fiber" ? phys.bendMm : phys.bendMm * 0.75;
+    const bundle = (pairCount.get(`${c.aKey}|${c.bKey}`) ?? 0) >= 6;
+    const limit =
+      c.lane === "fiber" || bundle ? phys.bendMm : phys.bendMm * 0.75;
     if (c.bendMm < limit) {
       if (!bendBad.has(c.kind)) bendBad.set(c.kind, []);
       bendBad.get(c.kind).push(c);
@@ -295,10 +318,15 @@ export function auditRackCables(slots, cabling, geo = RACK_GEO) {
   const close = [];
   const dataS = dataC.map((d) => samplePath(d.points, geo));
   for (const p of powerC) {
-    for (const [idx, run] of parallelRuns(samplePath(p.points, geo), dataS, 0.05)) {
+    for (const [idx, run] of parallelRuns(
+      samplePath(p.points, geo),
+      dataS,
+      0.05,
+    )) {
       if (run > 0.3) close.push({ p, d: dataC[idx], run });
     }
-  }  if (close.length)
+  }
+  if (close.length)
     add(
       "power-data",
       "warn",

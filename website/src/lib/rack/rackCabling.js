@@ -17,6 +17,7 @@
 // Muka depan unit di z = unitD/2; kedalaman unit mengikuti dimCm.d dari katalog.
 import { layoutUnits } from "./rackThree.js";
 import { MODEL_OF } from "./hardwareModels.js";
+import { PORT_LAYOUTS } from "./cabling/portLayouts.js";
 
 /** Ukuran scene rak & padanan nyatanya. Dipakai juga oleh rackThreeScene.js. */
 export const RACK_GEO = {
@@ -103,6 +104,14 @@ export const CABLE_KINDS = {
     color: "#c98a0b",
     lane: "data",
     r: 0.05,
+    std: null,
+  },
+  horizontal: {
+    nama: "Kabel horizontal Cat6 solid (ke perangkat)",
+    warnaLabel: "Abu-abu",
+    color: "#7a8597",
+    lane: "data",
+    r: 0.045,
     std: null,
   },
   c13: {
@@ -213,12 +222,22 @@ function rawProfileOf(s) {
   if (isPatch(s))
     return {
       role: "patch",
-      ports: row(portCount(s, 24), {
-        side: "front",
-        group: "access",
-        x0: -0.42,
-        x1: 0.42,
-      }),
+      ports: [
+        ...row(portCount(s, 24), {
+          side: "front",
+          group: "access",
+          x0: -0.42,
+          x1: 0.42,
+        }),
+        // Terminasi belakang (punch-down) ke kabel horizontal gedung, satu per port depan.
+        ...row(portCount(s, 24), {
+          side: "rear",
+          group: "horiz",
+          x0: 0.42,
+          x1: -0.42,
+          label: "Horizontal",
+        }),
+      ],
     };
   if (isOdf(s))
     return {
@@ -442,8 +461,45 @@ export function shelfFit(slot, geo = RACK_GEO) {
  * Port perangkat. Untuk perangkat di atas shelf, posisi port dipetakan ke badan perangkatnya
  * (lebar & tinggi sebenarnya di atas tatakan), jadi colokan menempel di perangkat.
  */
+/** Ringkasan grup port profil bawaan: [{ group, side, n }] (dipakai scripts/portLayouts.mjs). */
+export function rawPortGroups(s) {
+  const out = [];
+  for (const p of rawProfileOf(s).ports) {
+    const g = out.find((x) => x.group === p.group && x.side === p.side);
+    if (g) g.n++;
+    else out.push({ group: p.group, side: p.side, n: 1 });
+  }
+  return out;
+}
+
+/**
+ * Pindahkan port depan ke posisi port asli model 3D (PORT_LAYOUTS, hasil scripts/portLayouts.mjs).
+ * fy model relatif terhadap tinggi mesh (tinggi slot − celah), dipetakan ke tinggi slot penuh.
+ */
+function applyModelLayout(s, p) {
+  const lay = PORT_LAYOUTS[s?.id];
+  if (!lay) return p;
+  const H = s.unitHeight ?? 1;
+  const h = Math.max(H - RACK_GEO.gap, 0.2);
+  const idx = {};
+  const ports = [];
+  for (const x of p.ports) {
+    const list = x.side === "front" ? lay[x.group] : null;
+    if (!list) {
+      ports.push(x);
+      continue;
+    }
+    const i = (idx[x.group] = (idx[x.group] ?? -1) + 1);
+    const pos = list[i];
+    // Model punya port lebih sedikit dari nama katalog: ikuti jumlah port fisik model.
+    if (!pos) continue;
+    ports.push({ ...x, fx: pos[0], fy: (RACK_GEO.gap / 2 + pos[1] * h) / H });
+  }
+  return { ...p, ports };
+}
+
 export function profileOf(s) {
-  const p = rawProfileOf(s);
+  const p = applyModelLayout(s, rawProfileOf(s));
   const fit = shelfFit(s);
   if (!fit) return p;
   const slotH = Math.max((s.unitHeight ?? 1) - RACK_GEO.gap, 0.2);
@@ -465,7 +521,7 @@ export function profileOf(s) {
  * @returns {{ cables: object[], unconnected: { key: string, port: string, alasan: string }[] }}
  * cable = { id, kind, a: {key, port}, b: {key, port} | {exit:"top"|"bottom", label}, label, fungsi }
  */
-export function planRackCables(slots) {
+export function planRackCables(slots, opts = {}) {
   const devs = (slots ?? [])
     .filter((s) => !s.auto)
     .map((s) => ({ s, p: profileOf(s), used: new Set() }));
@@ -571,6 +627,60 @@ export function planRackCables(slots) {
           "Daya langsung dari stop kontak (tanpa PDU/UPS)",
         );
     });
+  }
+
+  // ── Mode kabel data manual: daya tetap otomatis, kabel data/fiber dari daftar user ──
+  // Daftar `opts.manual` diharapkan sudah dibersihkan (cleanManualCables di cabling/manualCabling.js).
+  if (opts.data === "manual") {
+    const byKey = new Map(devs.map((d) => [d.s.key, d]));
+    for (const m of opts.manual ?? []) {
+      const a = byKey.get(m.a?.key);
+      const ap = a?.p.ports.find((x) => x.id === m.a.port);
+      if (!a || !ap || !CABLE_KINDS[m.kind]) continue;
+      a.used.add(ap.id);
+      if (m.b?.exit) {
+        const label = m.b.label || "Keluar rak";
+        cables.push({
+          id: m.id,
+          kind: m.kind,
+          a: { key: a.s.key, port: ap.id },
+          b: {
+            exit: m.b.exit === "bottom" ? "bottom" : "top",
+            label,
+            ...(Array.isArray(m.b.target) ? { target: m.b.target } : {}),
+          },
+          label: `${a.s.nama} ${ap.label} → ${label}`,
+          fungsi: m.fungsi || "Kabel keluar rak",
+          manual: true,
+          ...(m.endDevice ? { endDevice: m.endDevice } : {}),
+        });
+        continue;
+      }
+      const b = byKey.get(m.b?.key);
+      const bp = b?.p.ports.find((x) => x.id === m.b.port);
+      if (!b || !bp) continue;
+      b.used.add(bp.id);
+      cables.push({
+        id: m.id,
+        kind: m.kind,
+        a: { key: a.s.key, port: ap.id },
+        b: { key: b.s.key, port: bp.id },
+        label: `${a.s.nama} ${ap.label} → ${b.s.nama} ${bp.label}`,
+        fungsi: m.fungsi || "Kabel data",
+        manual: true,
+        ...(m.endDevice ? { endDevice: m.endDevice } : {}),
+      });
+    }
+    // NIC server/NAS yang belum dikabel user dilaporkan supaya tidak terlewat.
+    for (const d of devs.filter(
+      (x) => x.p.role === "server" || x.p.role === "nas",
+    )) {
+      for (const p of d.p.ports.filter(
+        (x) => x.group === "nic" && !d.used.has(x.id),
+      ))
+        miss(d, p, "Belum dikabel (mode manual)");
+    }
+    return { cables, unconnected };
   }
 
   // ── Jaringan inti: ISP → router → firewall → switch inti ──
@@ -892,6 +1002,20 @@ export function routeRackCables(slots, cables, geo = RACK_GEO) {
           [x, A.pt[1], z],
           [x, H + 1.6, z], // naik lurus keluar lewat lubang kabel di atap rak
         ];
+        // Kabel ke perangkat ujung: belok ke penanda zona di samping atas rak (cable tray).
+        // target = [x tujuan, baris]: naik lewat atap, menyusuri tray ke x tujuan, lalu turun ke
+        // kotak perangkat (baris 0 sejajar tray, baris berikutnya lebih rendah di samping rak).
+        if (Array.isArray(c.b.target)) {
+          const [tx, row] = c.b.target;
+          const trayY = H + 1.9 + (ci % 4) * 0.05;
+          // Baris berikutnya menjauh dari rak (depan → +z, belakang → −z) supaya kabel tidak
+          // menembus kotak di baris lain.
+          const zr = z + Math.sign(z || 1) * row * END_ROW_H;
+          pts[pts.length - 1] = [x, trayY, z];
+          pts.push([tx, trayY, z]);
+          if (row) pts.push([tx, trayY, zr]);
+          pts.push([tx, endDeviceY(H) + END_BOX_H / 2, zr]);
+        }
       } else {
         pts = [
           A.pt,
@@ -1002,9 +1126,32 @@ export function routeRackCables(slots, cables, geo = RACK_GEO) {
   });
 }
 
+/** Tinggi tengah kotak perangkat ujung di baris `row` (scene), dan tinggi kotaknya. */
+export const END_BOX_H = 0.42;
+export const END_ROW_H = 1.35; // jarak antar baris kotak (arah z, menjauh dari rak)
+export const endDeviceY = (H) => H + 0.9;
+
+/**
+ * Titik port di ruang scene (sama dengan ujung kabel di routeRackCables), atau null.
+ * Dipakai marker "pasang kabel" di tampilan 3D.
+ */
+export function portPoint(slots, key, portId, geo = RACK_GEO) {
+  const layout = layoutUnits(slots ?? [], { gap: geo.gap });
+  const it = layout.items.find((x) => x.key === key);
+  const slot = (slots ?? []).find((s) => s.key === key);
+  const p = slot && profileOf(slot).ports.find((x) => x.id === portId);
+  if (!it || !p) return null;
+  const zFront = geo.unitD / 2;
+  return [
+    p.fx * geo.unitW,
+    it.y0 + p.fy * (it.y1 - it.y0),
+    p.side === "front" ? zFront + 0.06 : zFront - unitDepth(slot, geo) - 0.06,
+  ];
+}
+
 /** Rencana + jalur kabel lengkap untuk satu susunan rak. */
-export function rackCabling(slots, geo = RACK_GEO) {
-  const { cables, unconnected } = planRackCables(slots);
+export function rackCabling(slots, geo = RACK_GEO, opts = {}) {
+  const { cables, unconnected } = planRackCables(slots, opts);
   return { cables: routeRackCables(slots, cables, geo), unconnected };
 }
 
