@@ -7,6 +7,7 @@ export const ID = {
   "nav.rakit": "Rakit Rak",
   "nav.hardware": "Hardware",
   "nav.config": "Configuration",
+  "nav.vlan": "Jaringan & VLAN",
   "nav.calculator": "Kalkulator",
   "nav.settings": "Pengaturan",
   "nav.settingsAria": "Pengaturan",
@@ -270,6 +271,60 @@ export const ID = {
   "land.m4d": "Cadangan daya untuk seluruh rak. Cek kapasitas dan jalur kabelnya.",
   "land.showCta": "Jelajahi semua model",
   "land.showHint": "Gulir untuk memutar",
+  "land.howKicker": "Cara kerja",
+  "land.howTitle": "Dari foto berantakan jadi rak siap audit.",
+  "land.howSub":
+    "Empat langkah singkat. Tanpa instalasi, tanpa konfigurasi rumit—semuanya berjalan langsung di browser Anda.",
+  "land.how1t": "Unggah foto rak",
+  "land.how1d":
+    "Ambil foto rak server atau panel listrik dari depan, lalu tarik ke kotak brief atau pilih dari galeri.",
+  "land.how2t": "AI membaca kondisi",
+  "land.how2d":
+    "Deteksi visual menandai kabel, perangkat, dan titik berisiko langsung pada foto Anda.",
+  "land.how3t": "Dapatkan skor & temuan",
+  "land.how3d":
+    "Setiap temuan diberi tingkat keparahan, penyebab, dan langkah perbaikan yang bisa langsung dieksekusi.",
+  "land.how4t": "Rapikan & ekspor",
+  "land.how4d":
+    "Susun ulang rak di workspace 3D, lalu unduh laporan PDF atau Markdown untuk tim lapangan.",
+  "land.howCta": "Coba alurnya",
+  "land.faqKicker": "Tanya jawab",
+  "land.faqTitle": "Hal yang biasanya ditanyakan.",
+  "land.faqSub":
+    "Belum menemukan jawabannya? Mulai saja dulu—workspace akan memandu langkah berikutnya.",
+  "land.faq1q": "Apakah foto saya diunggah ke server?",
+  "land.faq1a":
+    "Tidak. Foto dan catatan disimpan di penyimpanan browser perangkat Anda. Analisis berjalan lokal, jadi data rak tidak keluar dari komputer Anda.",
+  "land.faq2q": "Perangkat apa saja yang bisa dideteksi?",
+  "land.faq2a":
+    "Switch, router, firewall, server, UPS, PDU, patch panel, dan rak itu sendiri. Panel listrik juga bisa dianalisis untuk kerapian serta keamanan jalur kabel.",
+  "land.faq3q": "Apakah butuh akun atau instalasi?",
+  "land.faq3a":
+    "Tidak perlu. Buka website, unggah foto, dan mulai. Semua project tersimpan otomatis di browser yang sama.",
+  "land.faq4q": "Bagaimana skor kerapian dihitung?",
+  "land.faq4a":
+    "Skor menggabungkan kerapian jalur kabel, keamanan listrik, tata letak perangkat, dan ruang pendinginan. Temuan berat menurunkan skor lebih besar.",
+  "land.faq5q": "Bisakah saya merapikan rak secara virtual dulu?",
+  "land.faq5a":
+    "Bisa. Workspace menyediakan rak 3D untuk menyusun ulang perangkat dan kabel sebelum menyentuh rak asli.",
+  "land.faq6q": "Apakah laporannya bisa dibagikan?",
+  "land.faq6a":
+    "Ya. Unduh laporan PDF atau Markdown berisi ringkasan skor, temuan, foto pendukung, dan rekomendasi perbaikan.",
+  "land.footKicker": "Siap mulai?",
+  "land.footTitle": "Rapikan rak tanpa menebak-nebak.",
+  "land.footSub":
+    "Unggah satu foto, lihat apa yang berisiko, dan keluar dengan rencana yang jelas.",
+  "land.footCta": "Mulai analisis",
+  "land.footProduct": "Produk",
+  "land.footAnalyze": "Analisis rak",
+  "land.footRack": "Rakit rak 3D",
+  "land.footHw": "Katalog hardware",
+  "land.footExplore": "Jelajahi",
+  "land.footHow": "Cara kerja",
+  "land.footFaq": "Tanya jawab",
+  "land.footTop": "Kembali ke atas",
+  "land.footMade": "Dibangun dengan Svelte, Three.js, dan GSAP.",
+  "land.footLocal": "Data tetap di browser Anda",
   "app.briefLabel": "Tujuan",
   "land.footer": "NeatOps AI. Dibuat untuk hackathon.",
   "nf.title": "Project tidak ditemukan",
@@ -286,6 +341,7 @@ export const EN = {
   "nav.rakit": "Rack Builder",
   "nav.hardware": "Hardware",
   "nav.config": "Configuration",
+  "nav.vlan": "Network & VLAN",
   "nav.calculator": "Calculators",
   "nav.settings": "Settings",
   "nav.settingsAria": "Settings",
@@ -548,6 +604,60 @@ export const EN = {
   "land.m4d": "Backup power for the whole rack. Check its capacity and cable paths.",
   "land.showCta": "Explore all models",
   "land.showHint": "Scroll to rotate",
+  "land.howKicker": "How it works",
+  "land.howTitle": "From a messy photo to an audit-ready rack.",
+  "land.howSub":
+    "Four short steps. No install, no complicated setup—everything runs right in your browser.",
+  "land.how1t": "Upload a rack photo",
+  "land.how1d":
+    "Shoot your server rack or electrical panel from the front, then drop it into the brief box or pick it from your gallery.",
+  "land.how2t": "AI reads the condition",
+  "land.how2d":
+    "Visual detection marks cables, devices, and risky spots right on top of your photo.",
+  "land.how3t": "Get a score & findings",
+  "land.how3d":
+    "Every finding gets a severity level, a cause, and a fix step you can act on immediately.",
+  "land.how4t": "Tidy up & export",
+  "land.how4d":
+    "Rearrange the rack in the 3D workspace, then download a PDF or Markdown report for the field team.",
+  "land.howCta": "Try the flow",
+  "land.faqKicker": "Q&A",
+  "land.faqTitle": "Questions that usually come up.",
+  "land.faqSub":
+    "Still missing an answer? Just start—the workspace will guide your next step.",
+  "land.faq1q": "Is my photo uploaded to a server?",
+  "land.faq1a":
+    "No. Photos and notes stay in your device's browser storage. Analysis runs locally, so your rack data never leaves your computer.",
+  "land.faq2q": "What devices can be detected?",
+  "land.faq2a":
+    "Switches, routers, firewalls, servers, UPS units, PDUs, patch panels, and the rack itself. Electrical panels can also be analysed for cable tidiness and safety.",
+  "land.faq3q": "Do I need an account or install anything?",
+  "land.faq3a":
+    "No. Open the site, upload a photo, and start. Every project is saved automatically in the same browser.",
+  "land.faq4q": "How is the tidiness score calculated?",
+  "land.faq4a":
+    "The score combines cable routing, electrical safety, device layout, and cooling space. Severe findings reduce the score more.",
+  "land.faq5q": "Can I tidy the rack virtually first?",
+  "land.faq5a":
+    "Yes. The workspace includes a 3D rack for rearranging devices and cables before you touch the real one.",
+  "land.faq6q": "Can the report be shared?",
+  "land.faq6a":
+    "Yes. Download a PDF or Markdown report with the score summary, findings, supporting photos, and fix recommendations.",
+  "land.footKicker": "Ready to start?",
+  "land.footTitle": "Tidy the rack without guesswork.",
+  "land.footSub":
+    "Upload one photo, see what is risky, and walk away with a clear plan.",
+  "land.footCta": "Start analysis",
+  "land.footProduct": "Product",
+  "land.footAnalyze": "Rack analysis",
+  "land.footRack": "3D rack builder",
+  "land.footHw": "Hardware catalog",
+  "land.footExplore": "Explore",
+  "land.footHow": "How it works",
+  "land.footFaq": "Q&A",
+  "land.footTop": "Back to top",
+  "land.footMade": "Built with Svelte, Three.js, and GSAP.",
+  "land.footLocal": "Your data stays in the browser",
   "app.briefLabel": "Goal",
   "land.footer": "NeatOps AI. Built for a hackathon.",
   "nf.title": "Project not found",

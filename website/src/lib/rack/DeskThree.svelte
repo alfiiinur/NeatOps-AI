@@ -13,7 +13,29 @@
   let view = $state("perspektif");
   let auto = $state(false);
   let selectedKey = $state(null);
+  let viewportEl = $state(null);
 
+  // ── Layar penuh: Fullscreen API, cadangan overlay CSS (mis. iOS Safari) ──
+  let full = $state(false);
+  let pseudo = $state(false);
+  function toggleFull() {
+    if (full) {
+      if (document.fullscreenElement) document.exitFullscreen?.().catch(() => {});
+      pseudo = false;
+      full = false;
+      return;
+    }
+    const el = viewportEl;
+    if (el?.requestFullscreen) {
+      el.requestFullscreen().catch(() => { pseudo = true; full = true; });
+    } else {
+      pseudo = true;
+      full = true;
+    }
+  }
+  function onFsChange() {
+    if (!pseudo) full = document.fullscreenElement === viewportEl;
+  }
   const selected = $derived(result.items.find((i) => i.key === selectedKey) ?? null);
 
   function goView(name) {
@@ -54,6 +76,9 @@
   });
 </script>
 
+<svelte:window onkeydown={(e) => e.key === "Escape" && full && pseudo && toggleFull()} />
+<svelte:document onfullscreenchange={onFsChange} />
+
 {#if !webglOK}
   <p class="dt-fallback">Tampilan 3D membutuhkan WebGL yang tidak tersedia di browser ini. Denah atas ditampilkan sebagai gantinya.</p>
   <DeskPlan {result} readonly />
@@ -73,7 +98,12 @@
         {/each}
       </ol>
     </aside>
-    <div class="dt-view">
+    <div class="dt-view" class:dt-pseudo={full && pseudo} bind:this={viewportEl}>
+      <button class="dt-fs" onclick={toggleFull} aria-label={full ? "Keluar layar penuh" : "Layar penuh"} title={full ? "Keluar layar penuh (Esc)" : "Layar penuh"}>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          {#if full}<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />{:else}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />{/if}
+        </svg>
+      </button>
       <canvas bind:this={canvas} aria-label="Tampilan 3D meja kerja. Seret untuk memutar, roda mouse untuk zoom, klik item untuk memilih."></canvas>
       {#if selected}
         <div class="dt-detail" role="status">
@@ -112,7 +142,12 @@
   .dt-meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
   .dt-view { position: relative; min-width: 0; height: clamp(420px, 60vh, 660px); border-radius: 10px; overflow: hidden; border: 1px solid var(--line-soft); background: radial-gradient(120% 90% at 50% 18%, #26314a 0%, #151b28 46%, #0a0d12 100%); }
   .dt-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
-  .dt-detail { position: absolute; top: 10px; right: 10px; max-width: calc(100% - 20px); display: flex; flex-direction: column; gap: 2px; background: color-mix(in srgb, var(--panel) 93%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
+  .dt-fs { position: absolute; top: 10px; right: 10px; z-index: 6; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; color: #dbe2ee; cursor: pointer; background: rgba(10, 13, 18, 0.86); border: 1px solid var(--line); border-radius: 10px; }
+  .dt-fs:hover { border-color: var(--lime-edge); color: #fff; }
+  .dt-fs:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  .dt-view:fullscreen { height: 100%; border-radius: 0; border: none; }
+  .dt-view.dt-pseudo { position: fixed; inset: 0; z-index: 1000; height: 100dvh; border-radius: 0; border: none; }
+  .dt-detail { position: absolute; top: 52px; right: 10px; max-width: calc(100% - 20px); display: flex; flex-direction: column; gap: 2px; background: color-mix(in srgb, var(--panel) 93%, transparent); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; font-size: 12.5px; }
   .dt-detail span { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
   .dt-bad { color: var(--bad) !important; font-family: var(--sans) !important; font-weight: 600; }
   .dt-bar { position: absolute; left: 10px; right: 10px; bottom: 10px; width: fit-content; max-width: calc(100% - 20px); margin-inline: auto; display: flex; gap: 4px; flex-wrap: wrap; justify-content: center; background: rgba(10, 13, 18, 0.86); border: 1px solid var(--line); border-radius: 12px; padding: 5px 6px; }

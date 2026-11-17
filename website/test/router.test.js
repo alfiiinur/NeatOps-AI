@@ -15,6 +15,7 @@ describe("parsePath", () => {
     assert.equal(parsePath("/project/abc/config").page, "config");
     assert.equal(parsePath("/project/abc/rakit").page, "rakit");
     assert.equal(parsePath("/project/abc/calculator").page, "calculator");
+    assert.equal(parsePath("/project/abc/vlan").page, "vlan");
   });
   it("sub-path tak dikenal = notfound", () => {
     assert.equal(parsePath("/project/abc/xyz").view, "notfound");
@@ -39,7 +40,7 @@ describe("buildPath", () => {
   });
   it("round-trip, termasuk id dengan karakter khusus", () => {
     for (const id of ["mq1x4k-ab12cd3", "a b/c"]) {
-      for (const page of ["home", "hardware", "config", "rakit", "calculator"]) {
+      for (const page of ["home", "hardware", "config", "rakit", "vlan", "calculator"]) {
         const r = parsePath(buildPath(id, page));
         assert.deepEqual(r, { view: "project", projectId: id, page });
       }
