@@ -8,7 +8,9 @@
   import ArStepControls from "./ArStepControls.svelte";
 
   // player (opsional): pemutar dari InstallPlayer; dipakai untuk kontrol langkah di overlay AR.
-  let { slots, routes = [], view, reduced = false, player = null, onFail = () => {} } = $props();
+  // Multi-rak: neighbors = rak ke-2 dst. ([{ id, nama, slots }]) berjajar di kanan rak utama, nbViews = view tiap rak itu,
+  // focusRack / focusKey = rak & unit yang sedang dipasang (kamera bergeser mengikutinya).
+  let { slots, routes = [], view, reduced = false, player = null, onFail = () => {}, name = null, rackId = null, neighbors = [], nbViews = [], focusRack = 0, focusKey = null } = $props();
 
   // Selama sesi AR, rAF jendela bisa berhenti: jalankan pemutar lewat frame XR.
   function onArActive(on) {
@@ -29,12 +31,15 @@
     try {
       scene = createRackScene(canvas, {
         slots: withArt(slots),
+        name,
+        rackId,
+        neighbors: neighbors.map((r) => ({ ...r, slots: withArt(r.slots) })),
         onSelect: () => {},
         onUserOrbit: () => {},
         onReady: () => (ready = true),
         reducedMotion: reduced,
       });
-      scene.setInstall(view, routes);
+      scene.setInstall(view, routes, nbViews);
     } catch (e) {
       console.warn("WebGL tidak tersedia untuk animasi 3D, kembali ke 2D.", e);
       onFail();
@@ -50,7 +55,17 @@
     const s = slots;
     untrack(() => {
       scene?.setSlots(withArt(s), { animate: false });
-      scene?.setInstall(view, routes);
+      scene?.setInstall(view, routes, nbViews);
+    });
+  });
+
+  // Daftar rak tetangga berubah → bangun ulang deretan.
+  $effect(() => {
+    const list = neighbors;
+    untrack(() => {
+      if (!scene) return;
+      scene.setNeighbors(list.map((r) => ({ ...r, slots: withArt(r.slots) })), name, rackId);
+      scene.setInstall(view, routes, nbViews);
     });
   });
 
@@ -58,15 +73,21 @@
   $effect(() => {
     const v = view;
     const r = routes;
-    scene?.setInstall(v, r);
+    const nv = nbViews;
+    scene?.setInstall(v, r, nv);
   });
 
   // Kamera mengikuti unit yang sedang dipasang (hanya saat unit aktif berganti).
   let lastActive = null;
+  let lastRack = 0;
   $effect(() => {
-    const k = view.active[0] ?? null;
-    if (k && k !== lastActive) untrack(() => scene?.frameUnit(k));
-    if (k) lastActive = k;
+    const k = focusKey ?? view.active[0] ?? null;
+    const idx = focusRack;
+    if (!k) return;
+    const moved = idx !== lastRack;
+    if (k !== lastActive || moved) untrack(() => scene?.frameUnit(k, moved ? 1400 : 800, idx));
+    lastActive = k;
+    lastRack = idx;
   });
 </script>
 

@@ -1084,12 +1084,19 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
   let score = 100;
   const warnings = [];
   const tips = [];
+  const tipActions = [];
+  const addTip = (text, action = null) => {
+    tips.push(text);
+    tipActions.push(action);
+  };
+  const addHw = (hwId, label) => ({ type: "add-hw", hwId, label });
 
   if (!hasPDU && hasServer) {
     score -= 15;
     warnings.push({
       level: "warn",
       text: "Tidak ada PDU — tambahkan PDU rack untuk distribusi daya yang aman.",
+      action: addHw("pdu-rack-1u", "Tambah PDU"),
     });
   }
   if (!hasUPS && totalWatt > 100) {
@@ -1097,6 +1104,7 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     warnings.push({
       level: "critical",
       text: "Tidak ada UPS — perangkat berisiko mati mendadak saat listrik padam.",
+      action: addHw("ups-apc-2u", "Tambah UPS"),
     });
   }
   if (hasUPS && totalWatt > upsCapacity * 0.8) {
@@ -1104,18 +1112,20 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     warnings.push({
       level: "warn",
       text: `Beban ${totalWatt}W melebihi 80% kapasitas UPS (${upsCapacity}W). Tambah UPS atau kurangi beban.`,
+      action: addHw("ups-apc-2u", "Tambah UPS"),
     });
   }
   if (!hasPatch && hasSwitch) {
     score -= 10;
-    tips.push("Tambah patch panel untuk manajemen terminasi kabel yang rapi.");
+    addTip("Tambah patch panel untuk manajemen terminasi kabel yang rapi.", addHw("patch-panel-24", "Tambah patch panel"));
   }
   if (hasOlt && !hasOdf) {
-    tips.push("Tambah ODF untuk terminasi serat dan splice tray dari OLT.");
+    addTip("Tambah ODF untuk terminasi serat dan splice tray dari OLT.", addHw("odf-24", "Tambah ODF"));
   }
   if (hasFiber) {
-    tips.push(
+    addTip(
       "Kabel fiber: jaga radius tekuk ≥ 30 mm dan pasang dust cap di port yang tidak terpakai.",
+      { type: "open-tab", tab: "kabel", label: "Lihat jalur kabel" },
     );
   }
   if (usedU > rackU) {
@@ -1123,11 +1133,12 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     warnings.push({
       level: "critical",
       text: `Kapasitas rak terlampaui! Butuh ${usedU}U, rak hanya ${rackU}U.`,
+      action: { type: "replan", label: "Susun ulang otomatis" },
     });
   }
   if (freeU < 2 && usedU <= rackU) {
     score -= 5;
-    tips.push("Sisakan minimal 2U kosong untuk ekspansi mendatang.");
+    addTip("Sisakan minimal 2U kosong untuk ekspansi mendatang.", { type: "go-step", step: 2, label: "Ubah hardware" });
   }
 
   // ─── Aturan posisi (penting saat susunan diubah manual) ─────────
@@ -1144,6 +1155,7 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     warnings.push({
       level: "warn",
       text: `${upsTooHigh.nama} (${upsTooHigh.beratKg}kg) berada di atas perangkat lain. Taruh UPS paling bawah agar rak tidak top-heavy.`,
+      action: { type: "reset-layout", label: "Susunan AI" },
     });
   }
   // Server/storage sebaiknya di bawah perangkat jaringan & manajemen.
@@ -1156,8 +1168,9 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
   );
   if (serverTooHigh) {
     score -= 5;
-    tips.push(
+    addTip(
       `${serverTooHigh.nama} ada di atas perangkat jaringan. Server lebih berat, sebaiknya di bawah switch/router.`,
+      { type: "reset-layout", label: "Susunan AI" },
     );
   }
 
@@ -1169,7 +1182,7 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
   // (dihitung ulang oleh scene 3D) supaya data project tetap ringan.
   // Mode kabel data: "auto" (direncanakan) atau "manual" (daftar user, dibersihkan dulu).
   const cabOpts = resolveCabling(slots, cab);
-  const cabling = rackCabling(slots, undefined, { data: cabOpts.data, manual: cabOpts.all });
+  const cabling = rackCabling(slots, undefined, { data: cabOpts.data, manual: cabOpts.all, powerTarget: cab.powerTarget });
   for (const d of cabOpts.dropped)
     cabling.unconnected.push({
       key: d.cable?.a?.key ?? "-",
@@ -1201,6 +1214,7 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     score,
     warnings,
     tips,
+    tipActions,
     cableRoutes,
     cables,
     cableUnconnected,
@@ -1212,6 +1226,7 @@ export function evaluateLayout(rackU, slotsIn, cab = {}) {
     dataCabling: cabOpts.data,
     manualCables: cabOpts.manual,
     endDevices: cabOpts.endDevices,
+    powerTarget: cab.powerTarget,
   };
 }
 

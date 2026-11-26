@@ -16,7 +16,8 @@
   import RackBuilder from "./lib/rack/RackBuilder.svelte";
   import Calculators from "./lib/calculator/Calculators.svelte";
   import VlanPlanner from "./lib/network/vlan/VlanPlanner.svelte";
-  import { analyzePhoto, ANALYSIS_STEPS } from "./lib/audit/simulator.js";
+  import { analyzePhoto, rebuildWithHardware, ANALYSIS_STEPS } from "./lib/audit/simulator.js";
+  import { updateHardwareBox, addHardware, removeHardware } from "./lib/audit/manualEdit.js";
   import { analyzeWithBackend, backendUrl } from "./lib/audit/backend.js";
   import { fileToDataUrl, makeSamples, makeThumb } from "./lib/core/photos.js";
   import { loadHistory, saveHistoryEntry, clearHistory } from "./lib/audit/history.js";
@@ -43,10 +44,43 @@
   let stepIdx = $state(0);
   let progress = $state(0);
   let result = $state(null);
+  // Foto yang tidak terdeteksi sebagai rak/perangkat jaringan: tidak ada skor, hanya penjelasan.
+  let noRack = $state(null);
   let tab = $state("ringkasan");
   let highlight = $state(null);
   // Kotak hardware di foto: nomor "H1", "H2", ... dipakai juga oleh kartu & panah.
-  const hwBoxes = $derived((result?.hardware ?? []).map((h, i) => ({ nomor: "H" + (i + 1), tingkat: "hw", bbox: h.bbox })));
+  // Mode simulasi: tidak ada kotak di atas foto asli (hasilnya contoh, bukan deteksi).
+  const isSim = $derived(result?.meta?.deteksi === "simulasi");
+  const hwBoxes = $derived(
+    isSim ? [] : (result?.hardware ?? []).map((h, i) => ({ nomor: "H" + (i + 1), tingkat: "hw", bbox: h.bbox, id: h.id })),
+  );
+  // Hanya temuan yang punya lokasi di foto yang digambar.
+  const findingBoxes = $derived(isSim ? [] : (result?.findings ?? []).filter((f) => f.bbox));
+  // Sorot silang: temuan ↔ hardware lewat finding.unit_ids. `related` = nomor kotak lain yang ikut menyala.
+  const activeHighlight = $derived.by(() => {
+    if (!highlight || !result) return highlight;
+    const hw = result.hardware ?? [];
+    if (typeof highlight.nomor === "string") {
+      const id = hw[Number(highlight.nomor.slice(1)) - 1]?.id;
+      const related = id
+        ? (result.findings ?? []).filter((f) => f.bbox && f.unit_ids?.includes(id)).map((f) => f.nomor)
+        : [];
+      return { ...highlight, related };
+    }
+    const f = (result.findings ?? []).find((x) => x.nomor === highlight.nomor);
+    const related = (f?.unit_ids ?? [])
+      .map((id) => hw.findIndex((h) => h.id === id))
+      .filter((i) => i >= 0)
+      .map((i) => "H" + (i + 1));
+    return { ...highlight, related };
+  });
+  const activeBoxes = $derived.by(() => {
+    const base = tab === "hardware" ? hwBoxes : findingBoxes;
+    const rel = activeHighlight?.related ?? [];
+    if (!rel.length) return base;
+    const extra = (tab === "hardware" ? findingBoxes : hwBoxes).filter((b) => rel.includes(b.nomor));
+    return [...base, ...extra];
+  });
   let history = $state([]);
   let storageWarning = $state("");
   let showCamera = $state(false);
@@ -100,10 +134,27 @@
       photo = p.photo;
       result = p.result;
       tab = "ringkasan";
-      highlight = null;
+      highlight = null; noRack = null;
       persistProjects();
     });
   });
+
+  // Koreksi manual kotak hardware: hardware diperbarui, lalu temuan/denah/rute dihitung ulang.
+  // Project tersimpan otomatis lewat $effect yang menyinkronkan `result` ke localStorage.
+  function applyHardware(next) {
+    if (!result) return;
+    result = rebuildWithHardware(result, next);
+    highlight = null; noRack = null;
+  }
+  function editBox(id, bbox) {
+    applyHardware(updateHardwareBox(result.hardware ?? [], id, bbox, result.meta?.rack));
+  }
+  function addBox(bbox) {
+    applyHardware(addHardware(result.hardware ?? [], bbox, result.meta?.rack));
+  }
+  function removeBox(id) {
+    applyHardware(removeHardware(result.hardware ?? [], id));
+  }
 
   function startFromLanding() {
     persistProjects();
@@ -162,7 +213,7 @@
   function resetAnalysis() {
     result = null;
     tab = "ringkasan";
-    highlight = null;
+    highlight = null; noRack = null;
   }
 
   function selectProject(id) {
@@ -202,7 +253,7 @@
       photo = fallback.photo;
       result = fallback.result;
       tab = "ringkasan";
-      highlight = null;
+      highlight = null; noRack = null;
       navigate(buildPath(fallback.id), { replace: true });
     }
     persistProjects();
@@ -274,6 +325,14 @@
     }
     progress = 1;
 
+    // Backend menjawab tetapi tidak menemukan rak: jangan beri skor (foto orang/ruangan jangan "Aman 98").
+    if (backend && (backend.rack_detected === false || backend.hardware.length === 0)) {
+      noRack = { photoName: photo.name };
+      storageWarning = "";
+      analyzing = false;
+      return;
+    }
+
     const key = `${photo.name}::${photo.dataUrl.length}::${photo.dataUrl.slice(-2048)}`;
     result = analyzePhoto(key, photo.name, backend);
     storageWarning = backendWarning;
@@ -312,7 +371,7 @@
     photo = h.photo;
     result = h.result;
     tab = "ringkasan";
-    highlight = null;
+    highlight = null; noRack = null;
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
@@ -378,8 +437,12 @@
         {analyzing}
         {stepIdx}
         {progress}
-        boxes={tab === "hardware" ? hwBoxes : (result?.findings ?? [])}
-        {highlight}
+        boxes={activeBoxes}
+        highlight={activeHighlight}
+        editable={!!result && !isSim && !analyzing && tab === "hardware"}
+        onEditBox={editBox}
+        onAddBox={addBox}
+        onRemoveBox={removeBox}
         onPick={pickFile}
         onCamera={() => (showCamera = true)}
         onSample={useSample}
@@ -389,6 +452,7 @@
       <Results
         {photo}
         {result}
+        {noRack}
         {tab}
         onTab={(t) => (tab = t)}
         onHighlight={(f) => (highlight = f)}
@@ -396,8 +460,8 @@
       />
       <Connectors
         active={!!result && (tab === "temuan" || tab === "hardware")}
-        items={tab === "hardware" ? hwBoxes : (result?.findings ?? [])}
-        {highlight}
+        items={activeBoxes}
+        highlight={activeHighlight}
       />
     </div>
 

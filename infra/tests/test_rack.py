@@ -101,3 +101,27 @@ def test_box_beyond_rack_bounds_is_uncertain():
     grid = build_grid(boxes, W, H)
     below = (0.1, grid.bottom + 0.5 * grid.u_h, 0.8, 2 * grid.u_h)  # menjorok ke bawah rak
     assert u_uncertain(below, grid)
+
+
+def test_snap_to_grid_aligns_edges_to_u_lines_and_rack_columns():
+    from app.vision.rack import snap_to_grid
+
+    boxes = [unit(0), unit(1, 2), unit(3), unit(4), unit(5)]
+    grid = build_grid(boxes, W, H)
+    # Kotak miring/longgar: atas turun 0,3U, bawah naik, tepi kiri sedikit masuk.
+    x, y, w, h = snap_to_grid((grid.x0 + 0.004, grid.top + 1.3 * grid.u_h, grid.x1 - grid.x0 - 0.01, 1.6 * grid.u_h), grid)
+    assert x == pytest.approx(grid.x0) and x + w == pytest.approx(grid.x1)
+    assert (y - grid.top) / grid.u_h == pytest.approx(round((y - grid.top) / grid.u_h))
+    assert h / grid.u_h == pytest.approx(round(h / grid.u_h))
+    assert grid.top - 1e-9 <= y and y + h <= grid.bottom + 1e-9
+
+
+def test_snap_to_grid_keeps_narrow_devices_narrow_and_min_one_u():
+    from app.vision.rack import snap_to_grid
+
+    boxes = [unit(0), unit(1), unit(2)]
+    grid = build_grid(boxes, W, H)
+    narrow = (grid.x0 + 0.3, grid.top + 0.2 * grid.u_h, 0.2, 0.3 * grid.u_h)  # setengah lebar, tipis
+    x, y, w, h = snap_to_grid(narrow, grid)
+    assert w == pytest.approx(0.2)  # tidak melebar ke seluruh rak
+    assert h >= grid.u_h - 1e-9

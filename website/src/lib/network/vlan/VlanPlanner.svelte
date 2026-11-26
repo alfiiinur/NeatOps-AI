@@ -41,6 +41,12 @@
   const eff = $derived(applyEndDevices(network, racks));
   const plan = $derived(planVlanSubnets(network.block, eff.view.vlans));
   const devices = $derived(networkDevices(racks, network));
+  // Perangkat dikelompokkan per rak (urutan kemunculan dipertahankan).
+  const devicesByRack = $derived.by(() => {
+    const m = new Map();
+    for (const d of devices) m.set(d.rackNama, [...(m.get(d.rackNama) ?? []), d]);
+    return [...m].map(([rack, list]) => ({ rack, list }));
+  });
   const device = $derived(devices.find((d) => d.id === devId) ?? devices[0] ?? null);
   const checks = $derived(checkNetwork(eff.view, racks, links));
   const topo = $derived(buildTopology(racks, links));
@@ -156,13 +162,18 @@
           {:else}
             <div class="vp-devs">
               <nav class="vp-devlist" aria-label="Pilih perangkat">
-                {#each devices as d (d.id)}
-                  {@const n = Object.keys(network.ports?.[d.id]?.map ?? {}).length}
-                  {@const bad = checks.issues.some((i) => i.level !== "info" && i.refs.devices.includes(d.id))}
-                  <button class:active={device?.id === d.id} onclick={() => (devId = d.id)} aria-current={device?.id === d.id}>
-                    <b>{d.nama}</b>
-                    <span>{d.rackNama} · {n} port diatur{bad ? " · ⚠" : ""}</span>
-                  </button>
+                {#each devicesByRack as grp (grp.rack)}
+                  <div class="vp-rackbox" role="group" aria-label={grp.rack}>
+                    <h4>{grp.rack}</h4>
+                    {#each grp.list as d (d.id)}
+                      {@const n = Object.keys(network.ports?.[d.id]?.map ?? {}).length}
+                      {@const bad = checks.issues.some((i) => i.level !== "info" && i.refs.devices.includes(d.id))}
+                      <button class:active={device?.id === d.id} onclick={() => (devId = d.id)} aria-current={device?.id === d.id}>
+                        <b>{d.nama}</b>
+                        <span>{n} port diatur{bad ? " · ⚠" : ""}</span>
+                      </button>
+                    {/each}
+                  </div>
                 {/each}
               </nav>
               {#if device}
@@ -203,8 +214,8 @@
 </main>
 
 <style>
-  .vp { padding-bottom: 40px; }
-  .vp-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin: 8px 0 14px; }
+  .vp { max-width: 1480px; margin: 0 auto; padding: 24px 28px 48px; box-sizing: border-box; }
+  .vp-hero { display: flex; justify-content: space-between; align-items: flex-end; gap: 20px; flex-wrap: wrap; margin: 0 0 20px; }
   .vp-hero h1 { margin: 0 0 6px; font-size: 26px; }
   .vp-hero p { margin: 0; max-width: 720px; color: var(--muted); font-size: 14px; }
   .vp-proj { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
@@ -212,25 +223,27 @@
   .vp-err { color: var(--bad); font-size: 13px; }
   .vp-empty { border: 1px dashed var(--line); border-radius: 10px; padding: 18px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .vp-empty p { margin: 0; flex: 1; min-width: 240px; }
-  .vp-summary { display: flex; gap: 14px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+  .vp-summary { display: flex; gap: 16px; align-items: center; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-bottom: 18px; }
   .vp-summary b { color: var(--text); }
   .vp-summary .lv-critical b { color: var(--bad); }
   .vp-summary .lv-warn b { color: var(--warn); }
   .vp-summary button { margin-left: auto; }
-  .vp-tabs { margin-bottom: 12px; }
-  .vp-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 14px; align-items: start; }
+  .vp-tabs { margin-bottom: 20px; }
+  .vp-body { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 24px; align-items: start; }
   .vp-main { min-width: 0; }
   .vp-note { font-size: 13px; color: var(--muted); }
   .vp-devs { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 12px; align-items: start; }
-  .vp-devlist { display: flex; flex-direction: column; gap: 4px; }
+  .vp-devlist { display: flex; flex-direction: column; gap: 10px; }
+  .vp-rackbox { display: flex; flex-direction: column; gap: 4px; border: 1.5px solid var(--lime-edge); border-radius: 12px; padding: 8px; }
+  .vp-rackbox h4 { margin: 0 0 2px 2px; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--muted); }
   .vp-devlist button { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 1px solid var(--line-soft); background: var(--panel); border-radius: 8px; padding: 8px 10px; font: inherit; color: var(--text); cursor: pointer; }
   .vp-devlist button.active { border-color: var(--lime-edge); background: var(--bg-soft); }
   .vp-devlist b { font-size: 13px; }
   .vp-devlist span { font-family: var(--mono); font-size: 11px; color: var(--faint); }
-  .vp-issues { position: sticky; top: 64px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); padding: 12px; max-height: calc(100vh - 90px); overflow-y: auto; }
-  .vp-issues h3 { margin: 0 0 8px; font-size: 14px; }
-  .vp-issues ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
-  .vp-issues li { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; border-left: 3px solid var(--lv); padding: 5px 8px; background: color-mix(in srgb, var(--lv) 8%, transparent); border-radius: 0 6px 6px 0; font-size: 12px; }
+  .vp-issues { position: sticky; top: 64px; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--panel); padding: 16px; max-height: calc(100vh - 90px); overflow-y: auto; }
+  .vp-issues h3 { margin: 0 0 12px; font-size: 14px; }
+  .vp-issues ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+  .vp-issues li { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; border-left: 3px solid var(--lv); padding: 10px 12px; background: color-mix(in srgb, var(--lv) 8%, transparent); border-radius: 0 6px 6px 0; font-size: 12px; }
   .vp-issues em { font-style: normal; font-size: 10.5px; font-weight: 700; text-transform: uppercase; color: var(--lv); }
   .vp-issues span { color: var(--muted); }
   .vp-fix { color: var(--text) !important; }
@@ -243,6 +256,7 @@
     .vp-issues { position: static; max-height: none; }
   }
   @media (max-width: 720px) {
+    .vp { padding: 16px 14px 36px; }
     .vp-devs { grid-template-columns: 1fr; }
   }
 </style>

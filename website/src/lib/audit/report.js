@@ -75,29 +75,35 @@ const SEV_LABEL = { kritis: "KRITIS", sedang: "SEDANG", ringan: "RINGAN" };
 const UNIT_FILL = { server: "#dcefe2", daya: "#f5e6c2", data: "#dce8f7", mgmt: "#e8e4d8", kosong: "#f6f3ec" };
 const UNIT_EDGE = { server: "#2a9d5c", daya: "#c98a0b", data: "#3b82d6", mgmt: "#bdb7a5", kosong: "#d9d2c2" };
 
-/** Denah rak ideal sebagai SVG mandiri (untuk dokumen cetak). */
+/** Denah rak (urutan U sama dengan tab Hardware) sebagai SVG mandiri (untuk dokumen cetak). */
 export function tidySchematicSvg(units) {
-  const rows = (units ?? [])
-    .map((u, i) => {
-      const y = 8 + i * 41;
+  const list = units ?? [];
+  const totalU = list.reduce((a, u) => a + (u.unitHeight ?? 1), 0) || 1;
+  const per = Math.min(41, 484 / totalU);
+  let cursor = 8;
+  const rows = list
+    .map((u) => {
+      const y = cursor;
+      const hgt = Math.max(14, (u.unitHeight ?? 1) * per - 4);
+      cursor += (u.unitHeight ?? 1) * per;
+      const mid = y + hgt / 2;
       const fill = UNIT_FILL[u.tipe] ?? "#f6f3ec";
       const edge = UNIT_EDGE[u.tipe] ?? "#d9d2c2";
       const leds =
         u.tipe === "server" || u.tipe === "data"
-          ? `<circle cx="272" cy="${y + 18}" r="3" fill="#2fbf71"/><circle cx="281" cy="${y + 18}" r="3" fill="#2fbf71" opacity="0.55"/>`
+          ? `<circle cx="272" cy="${mid}" r="3" fill="#2fbf71"/><circle cx="281" cy="${mid}" r="3" fill="#2fbf71" opacity="0.55"/>`
           : "";
       return (
-        `<rect x="44" y="${y}" width="248" height="37" rx="3" fill="${fill}" stroke="${edge}"/>` +
-        `<text x="8" y="${y + 23}" font-size="11" font-family="monospace" fill="#8a8576">${escapeHtml(u.u)}</text>` +
-        `<text x="54" y="${y + 23}" font-size="11.5" font-family="sans-serif" fill="#2b2a25">${escapeHtml(u.isi)}</text>` +
+        `<rect x="44" y="${y}" width="248" height="${hgt}" rx="3" fill="${fill}" stroke="${edge}"/>` +
+        `<text x="8" y="${mid + 4}" font-size="11" font-family="monospace" fill="#8a8576">${escapeHtml(u.u)}</text>` +
+        `<text x="54" y="${mid + 4}" font-size="11.5" font-family="sans-serif" fill="#2b2a25">${escapeHtml(u.isi)}</text>` +
         leds
       );
     })
     .join("");
-  const h = 8 + (units ?? []).length * 41 + 4;
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 ${h}" width="300" role="img" aria-label="Denah rak ideal">${rows}</svg>`;
+  const h = Math.round(cursor + 4);
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 ${h}" width="300" role="img" aria-label="Denah rak">${rows}</svg>`;
 }
-
 function statusColor(key) {
   return key === "aman" ? "#2a9d5c" : key === "waspada" ? "#c98a0b" : "#d23a40";
 }
@@ -202,7 +208,7 @@ ${withVisual ? `<h2>3 · Visual rapi — sebelum vs sesudah (simulasi)</h2>
 <ol>${actions}</ol>
 <h3>Rute kabel ideal</h3>
 <ol>${routes}</ol>
-<div class="schema">${tidySchematicSvg(result.tidy.units)}<p class="muted">Denah rak ideal 12U (simulasi)</p></div>` : ""}
+<div class="schema">${tidySchematicSvg(result.tidy.units)}<p class="muted">Denah rak sesuai hardware terdeteksi</p></div>` : ""}
 
 <h2>${withVisual ? "4" : "3"} · Saran prioritas</h2>
 ${advice}

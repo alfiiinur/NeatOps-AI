@@ -2,6 +2,9 @@
 // Nanti diganti pemanggilan API backend + model AI. Kontrak output dipertahankan:
 // { score, status, categories, findings, hardware, advice, tidy, meta }
 
+import { resolveFindings, rackArea } from "./resolveFindings.js";
+import { buildRackSlots } from "./rack3d.js";
+
 export const SEVERITY_COST = { kritis: 18, sedang: 10, ringan: 5 };
 
 const POOL = [
@@ -12,7 +15,6 @@ const POOL = [
     deskripsi:
       "Kabel menggantung bebas dan saling menyilang antar unit. Risiko tersangkut saat perawatan dan sulit dilacak saat gangguan.",
     tingkat: "sedang",
-    bbox: [0.08, 0.3, 0.84, 0.42],
     langkah: [
       "Kelompokkan kabel daya (kiri) dan kabel data (kanan) ke jalur terpisah.",
       "Pasang cable management horizontal 1U tiap 2–3 unit perangkat.",
@@ -28,7 +30,6 @@ const POOL = [
     deskripsi:
       "Beberapa beban besar (server + switch + monitor) menumpuk pada satu titik. Satu titik longgar bisa memadamkan seluruh rak.",
     tingkat: "kritis",
-    bbox: [0.55, 0.62, 0.38, 0.3],
     langkah: [
       "Ganti terminal rakitan dengan PDU rak 19″ yang punya sakelar per grup.",
       "Sebar beban ke minimal dua sirkuit berbeda bila tersedia.",
@@ -44,7 +45,6 @@ const POOL = [
     deskripsi:
       "Slot kosong antar unit tidak tertutup blanking panel sehingga udara panas bersirkulasi kembali ke inlet perangkat.",
     tingkat: "sedang",
-    bbox: [0.12, 0.12, 0.76, 0.24],
     langkah: [
       "Tutup semua slot U kosong dengan blanking panel.",
       "Pastikan arah kipas konsisten: dingin depan, panas belakang.",
@@ -60,7 +60,6 @@ const POOL = [
     deskripsi:
       "Tidak ada jalur bonding yang jelas antara bodi rak dan busbar ground. Berbahaya saat ada kebocoran arus ke bodi.",
     tingkat: "kritis",
-    bbox: [0.05, 0.7, 0.3, 0.24],
     langkah: [
       "Pasang kabel bonding 6 mm² dari bodi rak ke busbar ground ruangan.",
       "Pastikan tiap rel & pintu kabinet ikut ter-bonding.",
@@ -76,7 +75,6 @@ const POOL = [
     deskripsi:
       "Tidak satu pun kabel berlabel. Teknisi harus mengurut manual tiap ada insiden — MTTR bisa berlipat.",
     tingkat: "ringan",
-    bbox: [0.3, 0.4, 0.45, 0.3],
     langkah: [
       "Labeli kedua ujung tiap kabel: asal → tujuan + nomor port.",
       "Tempel denah port switch di pintu dalam rak.",
@@ -92,7 +90,6 @@ const POOL = [
     deskripsi:
       "Server/UPS berat berada di U atas. Rak jadi top-heavy dan rawan roboh saat pintu dibuka atau dipindah.",
     tingkat: "sedang",
-    bbox: [0.15, 0.05, 0.7, 0.22],
     langkah: [
       "Pindahkan UPS & server berat ke U bawah (U1–U6).",
       "Pasang perangkat ringan (patch panel, switch) di U atas.",
@@ -108,7 +105,6 @@ const POOL = [
     deskripsi:
       "Tumpukan debu di ventilasi menghambat aliran udara dan menaikkan suhu kerja perangkat.",
     tingkat: "ringan",
-    bbox: [0.1, 0.5, 0.5, 0.28],
     langkah: [
       "Bersihkan filter & intake dengan blower / vacuum anti-statis.",
       "Jadwalkan bersih berkala tiap 3 bulan.",
@@ -124,7 +120,6 @@ const POOL = [
     deskripsi:
       "Ada kabel yang terjepit engsel pintu dan rel server geser. Isolasi bisa terkupas dan korsleting.",
     tingkat: "kritis",
-    bbox: [0.62, 0.25, 0.32, 0.5],
     langkah: [
       "Bebaskan kabel terjepit dan periksa isolasi yang luka.",
       "Ganti kabel yang isolasinya rusak, jangan diisolasi ulang untuk daya.",
@@ -140,7 +135,6 @@ const POOL = [
     deskripsi:
       "Panel breaker tidak berlabel sehingga teknisi menebak sirkuit saat darurat — downtime tak perlu.",
     tingkat: "ringan",
-    bbox: [0.12, 0.08, 0.4, 0.26],
     langkah: [
       "Beri label tiap MCB: nama sirkuit + nomor rak yang dilayani.",
       "Tempel single-line diagram sederhana di pintu panel.",
@@ -156,7 +150,6 @@ const POOL = [
     deskripsi:
       "Pola penumpukan perangkat rapat di tengah tanpa spasi menghambat pembuangan panas lokal.",
     tingkat: "sedang",
-    bbox: [0.25, 0.35, 0.5, 0.35],
     langkah: [
       "Beri spasi 1U antar perangkat yang panas (server–server).",
       "Pasang sensor suhu di U atas, tengah, bawah.",
@@ -172,7 +165,6 @@ const POOL = [
     deskripsi:
       "Ada barang / kardus menumpuk di depan rak sehingga pintu tak terbuka penuh dan teknisi sulit bekerja.",
     tingkat: "ringan",
-    bbox: [0.05, 0.75, 0.9, 0.2],
     langkah: [
       "Kosongkan area kerja 1 meter di depan & belakang rak.",
       "Pindahkan stok kabel/kardus ke gudang, bukan di lorong rak.",
@@ -188,7 +180,6 @@ const POOL = [
     deskripsi:
       "Patch cord panjang melintang menutupi LED status & ventilasi depan switch.",
     tingkat: "ringan",
-    bbox: [0.2, 0.28, 0.6, 0.3],
     langkah: [
       "Ganti dengan patch cord sesuai panjang kebutuhan (0,5 / 1 m).",
       "Lewatkan tiap patch cord melalui cable manager terdekat.",
@@ -199,7 +190,22 @@ const POOL = [
   },
 ];
 
-// Pool hardware terdeteksi: nama generik, merek/tipe perkiraan, bbox area unit.
+// Urutan susunan rak simulasi (atas → bawah) + tinggi U. Bbox diturunkan dari grid U, bukan koordinat acak.
+const SIM_LAYOUT = {
+  "Patch Panel 24-port": { urut: 1, u: 1 },
+  "KVM Switch": { urut: 2, u: 1 },
+  "Switch 24-port": { urut: 3, u: 1 },
+  Router: { urut: 4, u: 1 },
+  Firewall: { urut: 5, u: 1 },
+  "PDU Rack": { urut: 6, u: 1 },
+  "Server Rack 1U": { urut: 7, u: 1 },
+  "Server Rack 2U": { urut: 8, u: 2 },
+  "NAS Rack 2U": { urut: 9, u: 2 },
+  "UPS 2U": { urut: 10, u: 2 },
+};
+const SIM_RACK = { x0: 0.12, x1: 0.88, top: 0.04, bottom: 0.96, uTotal: 12 };
+
+// Pool hardware terdeteksi: nama generik, merek/tipe perkiraan.
 const HARDWARE_POOL = [
   {
     nama: "Patch Panel 24-port",
@@ -207,7 +213,6 @@ const HARDWARE_POOL = [
     jenis: "Konektivitas",
     tipe: "Cat6A, 1U",
     maxJumlah: 2,
-    bbox: [0.12, 0.06, 0.76, 0.09],
   },
   {
     nama: "Switch 24-port",
@@ -215,7 +220,6 @@ const HARDWARE_POOL = [
     jenis: "Jaringan",
     tipe: "Managed L3, PoE+",
     maxJumlah: 2,
-    bbox: [0.12, 0.17, 0.76, 0.1],
   },
   {
     nama: "Router",
@@ -223,7 +227,6 @@ const HARDWARE_POOL = [
     jenis: "Jaringan",
     tipe: "10-port + SFP+",
     maxJumlah: 1,
-    bbox: [0.12, 0.29, 0.5, 0.09],
   },
   {
     nama: "Firewall",
@@ -231,7 +234,6 @@ const HARDWARE_POOL = [
     jenis: "Keamanan",
     tipe: "NGFW 10-port",
     maxJumlah: 1,
-    bbox: [0.55, 0.29, 0.33, 0.09],
   },
   {
     nama: "Server Rack 1U",
@@ -239,7 +241,6 @@ const HARDWARE_POOL = [
     jenis: "Server",
     tipe: "Rack 1U, Xeon E",
     maxJumlah: 2,
-    bbox: [0.15, 0.4, 0.7, 0.11],
   },
   {
     nama: "Server Rack 2U",
@@ -247,7 +248,6 @@ const HARDWARE_POOL = [
     jenis: "Server",
     tipe: "Rack 2U, dual-socket",
     maxJumlah: 2,
-    bbox: [0.15, 0.53, 0.7, 0.13],
   },
   {
     nama: "NAS Rack 2U",
@@ -255,7 +255,6 @@ const HARDWARE_POOL = [
     jenis: "Storage",
     tipe: "8-bay SATA",
     maxJumlah: 1,
-    bbox: [0.15, 0.68, 0.6, 0.12],
   },
   {
     nama: "UPS 2U",
@@ -263,7 +262,6 @@ const HARDWARE_POOL = [
     jenis: "Daya",
     tipe: "Online 2700W",
     maxJumlah: 1,
-    bbox: [0.15, 0.82, 0.7, 0.13],
   },
   {
     nama: "PDU Rack",
@@ -271,7 +269,6 @@ const HARDWARE_POOL = [
     jenis: "Daya",
     tipe: "24× C13, metered",
     maxJumlah: 1,
-    bbox: [0.72, 0.4, 0.16, 0.4],
   },
   {
     nama: "KVM Switch",
@@ -279,7 +276,6 @@ const HARDWARE_POOL = [
     jenis: "Manajemen",
     tipe: "IP-KVM 16-port",
     maxJumlah: 1,
-    bbox: [0.12, 0.12, 0.4, 0.07],
   },
 ];
 
@@ -342,6 +338,11 @@ const BACKEND_CABLE_IDS = new Set([
   "kabel-terjepit",
   "patch-acakan",
   "tanpa-label",
+  // Digantikan temuan geometri backend (build_hardware_findings). "stek-menumpuk" ikut dibuang karena
+  // backend belum mendeteksi soket PDU, jadi klaim itu tidak boleh muncul pada hasil deteksi nyata.
+  "ventilasi-tertutup",
+  "beban-berat-atas",
+  "stek-menumpuk",
 ]);
 const SEVERITY_ORDER = { kritis: 0, sedang: 1, ringan: 2 };
 const BACKEND_FINDING_CONFIDENCE = 80; // backend belum mengirim keyakinan per temuan
@@ -350,6 +351,8 @@ const BACKEND_FINDING_CONFIDENCE = 80; // backend belum mengirim keyakinan per t
 export function hardwareFromBackend(list) {
   return (list ?? [])
     .map((h) => ({
+      id: h.id,
+      bbox_source: h.bbox_source ?? "detected",
       nama: h.nama,
       merek: h.merek || "—",
       jenis: h.jenis,
@@ -362,7 +365,8 @@ export function hardwareFromBackend(list) {
       // true → ukuran/posisi U tidak pasti (mis. UPS tower, perangkat melewati batas rak). Backend lama: false.
       u_uncertain: h.u_uncertain === true,
     }))
-    .sort((a, b) => a.bbox[1] - b.bbox[1]); // atas → bawah seperti susunan rak
+    .sort((a, b) => a.bbox[1] - b.bbox[1]) // atas → bawah seperti susunan rak
+    .map((h, i) => ({ ...h, id: h.id ?? `hw-${i + 1}` }));
 }
 
 const SLOT_STATUS = new Set(["kosong", "terisi", "tidak_jelas"]);
@@ -377,6 +381,12 @@ export function rackFromBackend(rack) {
     u_total: rack.u_total ?? null,
     u_estimated: rack.u_estimated !== false, // tanpa info → anggap taksiran
     gap_retries: rack.gap_retries ?? 0,
+    // Geometri grid U ternormalisasi (backend baru); null bila backend lama tidak mengirimnya.
+    u_h: rack.u_h ?? null,
+    top: rack.top ?? null,
+    bottom: rack.bottom ?? null,
+    x0: rack.x0 ?? null,
+    x1: rack.x1 ?? null,
     empty_slots: (rack.empty_slots ?? []).map((s) => ({
       u_start: s.u_start,
       u_end: s.u_end,
@@ -384,6 +394,46 @@ export function rackFromBackend(rack) {
       status: SLOT_STATUS.has(s.status) ? s.status : "tidak_jelas",
     })),
   };
+}
+
+/**
+ * Hardware simulasi: ditumpuk atas → bawah sesuai SIM_LAYOUT; bbox dihitung dari grid U (tanpa jitter).
+ * bbox_source "derived": bukan hasil deteksi pada foto.
+ */
+function simulatedHardware(entries) {
+  const sorted = [...entries].sort(
+    (a, b) => SIM_LAYOUT[a.h.nama].urut - SIM_LAYOUT[b.h.nama].urut,
+  );
+  const totalU = Math.max(
+    SIM_RACK.uTotal,
+    sorted.reduce((s, e) => s + SIM_LAYOUT[e.h.nama].u, 0),
+  );
+  const uh = (SIM_RACK.bottom - SIM_RACK.top) / totalU;
+  let u = 1; // slot ke-u dari atas (1 = paling atas); nomor U dihitung dari dasar seperti backend
+  return sorted.map(({ h, jumlah, keyakinan }, i) => {
+    const size = SIM_LAYOUT[h.nama].u;
+    const item = {
+      id: `hw-${i + 1}`,
+      bbox_source: "derived",
+      nama: h.nama,
+      merek: h.merek,
+      jenis: h.jenis,
+      tipe: h.tipe,
+      jumlah,
+      bbox: [
+        SIM_RACK.x0,
+        SIM_RACK.top + (u - 1) * uh,
+        SIM_RACK.x1 - SIM_RACK.x0,
+        size * uh,
+      ],
+      keyakinan,
+      u_start: totalU - (u - 1 + size) + 1, // U1 di dasar, sama dengan backend
+      u_size: size,
+      u_uncertain: false,
+    };
+    u += size;
+    return item;
+  });
 }
 
 /**
@@ -403,70 +453,46 @@ export function analyzePhoto(key, photoName, backend = null) {
   // Dengan backend, temuan kabel simulasi dibuang: digantikan temuan dari deteksi kabel nyata.
   if (backend) picked = picked.filter((f) => !BACKEND_CABLE_IDS.has(f.id));
 
-  // Jitter kecil pada bbox agar tiap foto terasa "dideteksi" berbeda.
-  let findings = picked.map((f, i) => {
-    const j = () => (rand() - 0.5) * 0.06;
-    const [x, y, w, h] = f.bbox;
-    return {
-      ...f,
-      nomor: i + 1,
-      bbox: [
-        clamp(x + j(), 0.02, 0.9),
-        clamp(y + j(), 0.02, 0.85),
-        clamp(w + j(), 0.12, 0.94),
-        clamp(h + j(), 0.1, 0.9),
-      ],
-      keyakinan: Math.round(72 + rand() * 25),
-    };
-  });
+  // Temuan template: tanpa bbox. Lokasinya ditentukan resolveFindings() dari hardware.
+  let findings = picked.map((f) => ({
+    ...f,
+    keyakinan: Math.round(72 + rand() * 25),
+  }));
 
   if (backend) {
     const real = (backend.findings ?? [])
       .filter(
-        (f) =>
-          f &&
-          f.tingkat in SEVERITY_ORDER &&
-          Array.isArray(f.bbox) &&
-          Array.isArray(f.langkah),
+        (f) => f && f.tingkat in SEVERITY_ORDER && Array.isArray(f.langkah),
       )
       .map((f) => ({
         ...f,
         keyakinan: f.keyakinan ?? BACKEND_FINDING_CONFIDENCE,
       }));
     // sort stabil: urutan keparahan, simulasi lebih dulu pada tingkat yang sama
-    findings = [...findings, ...real]
-      .sort((a, b) => SEVERITY_ORDER[a.tingkat] - SEVERITY_ORDER[b.tingkat])
-      .map((f, i) => ({ ...f, nomor: i + 1 }));
+    findings = [...findings, ...real].sort(
+      (a, b) => SEVERITY_ORDER[a.tingkat] - SEVERITY_ORDER[b.tingkat],
+    );
   }
 
   // Deteksi hardware: stream acak TERPISAH agar temuan & skor lama tak berubah.
   const hrand = rng(seed ^ 0x9e3779b9);
   const hwShuffled = [...HARDWARE_POOL].sort(() => hrand() - 0.5);
   const hwCount = 4 + Math.floor(hrand() * 3);
-  const simHardware = hwShuffled
-    .slice(0, hwCount)
-    .map((h) => {
-      const j = () => (hrand() - 0.5) * 0.04;
-      const [x, y, w, hh] = h.bbox;
-      return {
-        nama: h.nama,
-        merek: h.merek,
-        jenis: h.jenis,
-        tipe: h.tipe,
-        jumlah: 1 + Math.floor(hrand() * h.maxJumlah),
-        bbox: [
-          clamp(x + j(), 0.02, 0.9),
-          clamp(y + j(), 0.02, 0.85),
-          clamp(w + j(), 0.12, 0.94),
-          clamp(hh + j(), 0.06, 0.9),
-        ],
-        keyakinan: Math.round(70 + hrand() * 27),
-      };
-    })
-    .sort((a, b) => a.bbox[1] - b.bbox[1]); // atas → bawah seperti susunan rak
+  const simHardware = simulatedHardware(
+    hwShuffled.slice(0, hwCount).map((h) => ({
+      h,
+      jumlah: 1 + Math.floor(hrand() * h.maxJumlah),
+      keyakinan: Math.round(70 + hrand() * 27),
+    })),
+  );
   const hardware = backend
     ? hardwareFromBackend(backend.hardware)
     : simHardware;
+  const rackInfo = rackFromBackend(backend?.rack);
+
+  // Prioritas saran mengikuti tingkat keparahan; nomor temuan mengikuti posisi di foto (atas → bawah).
+  const bySeverity = [...findings];
+  findings = resolveFindings(findings, hardware, rackInfo);
 
   const cost = findings.reduce((s, f) => s + SEVERITY_COST[f.tingkat], 0);
   const score = clamp(100 - cost, 8, 98);
@@ -487,7 +513,7 @@ export function analyzePhoto(key, photoName, backend = null) {
   });
   void labelMap;
 
-  const advice = findings.map((f, i) => ({
+  const advice = bySeverity.map((f, i) => ({
     prioritas: i + 1,
     tingkat: f.tingkat,
     judul: f.judul,
@@ -496,7 +522,7 @@ export function analyzePhoto(key, photoName, backend = null) {
     kategori: f.kategori,
   }));
 
-  const tidy = buildTidyPlan(findings, rand);
+  const tidy = buildTidyPlan(findings, rand, hardware, rackInfo);
 
   const kritis = findings.filter((f) => f.tingkat === "kritis").length;
   const sedang = findings.filter((f) => f.tingkat === "sedang").length;
@@ -519,13 +545,105 @@ export function analyzePhoto(key, photoName, backend = null) {
       // "backend": hardware, posisi U, dan temuan kabel dari deteksi nyata; sisanya masih simulasi.
       simulasi: !backend,
       deteksi: backend ? "backend" : "simulasi",
-      rack: rackFromBackend(backend?.rack),
+      rack: rackInfo,
     },
   };
 }
 
-// Rencana perapian: aksi konkret + denah rak ideal (unit U).
-function buildTidyPlan(findings, rand) {
+const TIDY_TIPE = {
+  Daya: "daya",
+  Server: "server",
+  Storage: "server",
+  Manajemen: "mgmt",
+};
+
+/** Denah rak dari hardware (atas → bawah, sama dengan 3D): slot kosong ikut tampil sebagai "kosong". */
+export function tidyUnits(hardware, rack) {
+  const { slots } = buildRackSlots({ hardware, meta: { rack } });
+  return slots.map((s) => {
+    const h = s.sourceIndex >= 0 ? hardware[s.sourceIndex] : null;
+    const single = s.uStart === s.uEnd;
+    return {
+      u: single ? `U${s.uStart}` : `U${s.uEnd}–U${s.uStart}`, // atas → bawah; U1 di dasar
+      isi: h ? h.nama : "Slot kosong (pasang blanking panel)",
+      tipe: h ? (TIDY_TIPE[h.jenis] ?? "data") : "kosong",
+      unitHeight: s.unitHeight,
+      hwId: h?.id ?? null,
+    };
+  });
+}
+
+const isDataUnit = (h) => h.jenis === "Jaringan" || h.jenis === "Konektivitas";
+const isPowerUnit = (h) => h.jenis === "Daya";
+const midY = (h) => h.bbox[1] + h.bbox[3] / 2;
+
+/**
+ * Rute kabel ideal dari posisi unit: data dari Switch/Patch Panel ke kanal kanan rak,
+ * daya dari UPS/PDU ke kanal kiri. Titik awal = tengah unit (y tengah U), titik akhir = kanal di tepi rak.
+ */
+export function tidyRoutes(hardware, rack) {
+  const area = rackArea(rack, hardware);
+  const dataX = area.x1 - 0.02;
+  const powerX = area.x0 + 0.02;
+  const route = (h, lane) => ({
+    dari: [h.bbox[0] + h.bbox[2] / 2, midY(h)],
+    ke: [lane === "data" ? dataX : powerX, midY(h)],
+    label:
+      lane === "data" ? "jalur data → kanal kanan" : "jalur daya → kanal kiri",
+    unit: h.u_start != null ? `${h.nama} (U${h.u_start})` : h.nama,
+    warna: lane === "data" ? "#5aa9ff" : "#f2a81d",
+    hwId: h.id ?? null,
+  });
+  return [
+    ...hardware
+      .filter(isDataUnit)
+      .slice(0, 4)
+      .map((h) => route(h, "data")),
+    ...hardware
+      .filter(isPowerUnit)
+      .slice(0, 3)
+      .map((h) => route(h, "power")),
+  ];
+}
+
+/**
+ * Hitung ulang bagian hasil yang bergantung pada hardware setelah koreksi manual:
+ * lokasi temuan (yang diturunkan dari unit/slot), denah & rute Visual rapi. Skor, kategori, dan saran tetap.
+ * Temuan yang kotaknya hasil deteksi (kabel) atau manual dipertahankan.
+ */
+export function rebuildWithHardware(result, hardware) {
+  const rack = result.meta?.rack ?? null;
+  const ids = new Set(hardware.map((h) => h.id));
+  const templates = (result.findings ?? []).map((f) => {
+    if (
+      f.anchor === "unit" ||
+      f.anchor === "slot" ||
+      f.anchor === "none" ||
+      !f.bbox
+    ) {
+      const { bbox, anchor, bbox_source, unit_ids, ...rest } = f; // dihitung ulang dari hardware baru
+      void bbox;
+      void anchor;
+      void bbox_source;
+      void unit_ids;
+      return rest;
+    }
+    return { ...f, unit_ids: (f.unit_ids ?? []).filter((id) => ids.has(id)) };
+  });
+  return {
+    ...result,
+    hardware,
+    findings: resolveFindings(templates, hardware, rack),
+    tidy: {
+      ...result.tidy,
+      units: tidyUnits(hardware, rack),
+      routes: tidyRoutes(hardware, rack),
+    },
+  };
+}
+
+// Rencana perapian: aksi konkret + denah rak (unit U) + rute kabel dari hardware terdeteksi.
+function buildTidyPlan(findings, rand, hardware = [], rack = null) {
   const actions = [];
   const has = (id) => findings.some((f) => f.id === id);
 
@@ -575,50 +693,9 @@ function buildTidyPlan(findings, rand) {
       isi: "Jadwalkan inspeksi visual tiap bulan agar tetap rapi.",
     });
 
-  // Denah rak ideal 12U (atas → bawah).
-  const units = [
-    { u: "U12", isi: "Patch panel 24p", tipe: "data" },
-    { u: "U11", isi: "Cable manager", tipe: "mgmt" },
-    { u: "U10", isi: "Switch 24p", tipe: "data" },
-    { u: "U9", isi: "Cable manager", tipe: "mgmt" },
-    { u: "U8", isi: "Server aplikasi 1U", tipe: "server" },
-    { u: "U7", isi: "Blanking + spasi", tipe: "kosong" },
-    { u: "U6", isi: "Server database 2U", tipe: "server" },
-    { u: "U5", isi: "↳ (lanjutan)", tipe: "server" },
-    { u: "U4", isi: "PDU rak 19″", tipe: "daya" },
-    { u: "U3", isi: "UPS 2U", tipe: "daya" },
-    { u: "U2", isi: "↳ (lanjutan)", tipe: "daya" },
-    { u: "U1", isi: "Baterai / stabilizer", tipe: "daya" },
-  ];
-
-  // Rute kabel ideal untuk overlay "sesudah" (koordinat ternormalisasi).
-  const routes = [
-    {
-      dari: [0.5, 0.16],
-      ke: [0.12, 0.16],
-      label: "jalur data → kanal kanan",
-      warna: "#5aa9ff",
-    },
-    {
-      dari: [0.5, 0.45],
-      ke: [0.12, 0.45],
-      label: "patch cord pendek via manager",
-      warna: "#5aa9ff",
-    },
-    {
-      dari: [0.5, 0.72],
-      ke: [0.88, 0.72],
-      label: "jalur daya → PDU",
-      warna: "#f2a81d",
-    },
-    {
-      dari: [0.5, 0.88],
-      ke: [0.88, 0.88],
-      label: "UPS → PDU",
-      warna: "#f2a81d",
-    },
-  ];
-
+  // Denah & rute diturunkan dari hardware yang sama dengan tab Hardware/3D (urutan U identik).
+  const units = tidyUnits(hardware, rack);
+  const routes = tidyRoutes(hardware, rack);
   return { actions, units, routes, rapih: 90 + Math.floor(rand() * 9) };
 }
 

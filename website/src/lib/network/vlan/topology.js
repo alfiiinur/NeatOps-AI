@@ -6,7 +6,19 @@ import { deviceId } from "./vlanPlan.js";
 import { collectEdges } from "./vlanChecks.js";
 
 export const ISP_ID = "isp";
-const LAYER_OF_ROLE = { router: 1, firewall: 1, switch: 3, end: 5 };
+// pln…load: peran pada topologi rantai daya (rack/power/powerTopology.js); tidak muncul di topologi data.
+const LAYER_OF_ROLE = {
+  router: 1,
+  firewall: 1,
+  switch: 3,
+  end: 5,
+  pln: 0,
+  panel: 1,
+  avr: 2,
+  ups: 3,
+  pdu: 4,
+  load: 4,
+};
 
 /**
  * Node & edge topologi dari rak (kabel data, mode auto atau manual) + link antar rak.
@@ -27,6 +39,7 @@ export function buildTopology(racks, links = []) {
       nama: hit.s.nama,
       role: profileOf(hit.s).role ?? "other",
       rackNama: hit.r.nama,
+      grp: hit.r.nama,
       uStart: hit.s.uStart,
     });
   };
@@ -120,6 +133,7 @@ export function buildTopology(racks, links = []) {
         role: "end",
         type: g.type,
         rackNama: g.vlans.size ? `VLAN ${[...g.vlans].join(",")}` : "",
+        grp: nodes.get(g.sw)?.grp,
         vlans: [...g.vlans],
       });
       edges.push({
@@ -148,7 +162,7 @@ export function buildTopology(racks, links = []) {
 export function topologyLayout(
   nodes,
   edges,
-  { width = 900, rowH = 110, pad = 60 } = {},
+  { width = 900, rowH = 110, pad = 60, groupBy = false } = {},
 ) {
   const deg = new Map(nodes.map((n) => [n.id, 0]));
   const adj = new Map(nodes.map((n) => [n.id, new Set()]));
@@ -190,11 +204,43 @@ export function topologyLayout(
   }
   const layers = [...byLayer.keys()].sort((a, b) => a - b);
   const pos = new Map();
+  // Mode kelompok (per rak): tiap rak mendapat pita horizontal sendiri supaya kotak outline-nya tidak bertumpuk.
+  const GAP = 28;
+  const COL = 130;
+  const grouped = groupBy
+    ? [...new Set(nodes.map((n) => n.grp).filter(Boolean))]
+    : [];
+  const band = new Map(); // grp -> { x0, w }
+  let totalW = width;
+  if (grouped.length) {
+    let x = pad;
+    for (const g of grouped) {
+      let cols = 1;
+      for (const l of layers)
+        cols = Math.max(cols, byLayer.get(l).filter((n) => n.grp === g).length);
+      const w = Math.max(150, cols * COL);
+      band.set(g, { x0: x, w });
+      x += w + GAP;
+    }
+    totalW = Math.max(width, x - GAP + pad);
+  }
   const place = (list, row) => {
-    const step = (width - pad * 2) / Math.max(1, list.length);
-    list.forEach((n, i) =>
-      pos.set(n.id, { x: pad + step * (i + 0.5), y: pad + row * rowH }),
-    );
+    const y = pad + row * rowH;
+    if (!grouped.length) {
+      const step = (width - pad * 2) / Math.max(1, list.length);
+      list.forEach((n, i) => pos.set(n.id, { x: pad + step * (i + 0.5), y }));
+      return;
+    }
+    const free = list.filter((n) => !band.has(n.grp));
+    const fstep = (totalW - pad * 2) / Math.max(1, free.length);
+    free.forEach((n, i) => pos.set(n.id, { x: pad + fstep * (i + 0.5), y }));
+    for (const g of grouped) {
+      const mine = list.filter((n) => n.grp === g);
+      const { x0, w } = band.get(g);
+      mine.forEach((n, i) =>
+        pos.set(n.id, { x: x0 + (w / mine.length) * (i + 0.5), y }),
+      );
+    }
   };
   layers.forEach((l, row) => {
     let list = byLayer.get(l);
@@ -226,10 +272,24 @@ export function topologyLayout(
       x2: pos.get(e.to).x,
       y2: pos.get(e.to).y,
     }));
+  // Kotak outline per rak: dari baris teratas sampai terbawah yang dipakai rak itu.
+  const groups = grouped.map((g) => {
+    const ys = outNodes.filter((n) => n.grp === g).map((n) => n.y);
+    const { x0, w } = band.get(g);
+    const top = Math.min(...ys) - 44;
+    return {
+      name: g,
+      x: x0 - 6,
+      y: top,
+      w: w + 12,
+      h: Math.max(...ys) + 34 - top,
+    };
+  });
   return {
     nodes: outNodes,
     edges: outEdges,
-    width,
+    groups,
+    width: totalW,
     height: pad * 2 + Math.max(0, layers.length - 1) * rowH,
   };
 }

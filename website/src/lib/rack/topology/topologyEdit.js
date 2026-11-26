@@ -324,6 +324,12 @@ const ICON = {
   odf: "ODF",
   olt: "OLT",
   kvm: "KVM",
+  pln: "PLN",
+  panel: "MCB",
+  avr: "AVR",
+  ups: "UPS",
+  pdu: "PDU",
+  load: "LOAD",
   other: "DEV",
 };
 const END_ICON = {
@@ -342,6 +348,7 @@ const shorten = (s, n) => (s.length > n ? `${s.slice(0, n - 1)}…` : s);
 export function laneColorOf(kind) {
   if (kind === "isp") return "#c98a0b";
   if (kind === "horizontal") return "#7a8597";
+  if (CABLE_KINDS[kind]?.lane === "power") return "#2a9d5c";
   const lane = CABLE_KINDS[kind]?.lane;
   return lane === "fiber" ? "#22b8cf" : "#3b82d6";
 }

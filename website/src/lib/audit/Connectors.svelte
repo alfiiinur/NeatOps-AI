@@ -117,7 +117,7 @@
 
     <g clip-path="url(#ws-clip)">
       {#each lines as l (l.n)}
-        <g class="conn {l.sev}" class:dim={highlight && highlight.nomor !== l.n}>
+        <g class="conn {l.sev}" class:dim={highlight && highlight.nomor !== l.n && !highlight.related?.includes(l.n)}>
           <path class="conn-base" d={l.d} />
           <path class="conn-flow" d={l.d} />
           <circle class="conn-dot"  cx={l.x1} cy={l.y1} r="4" />

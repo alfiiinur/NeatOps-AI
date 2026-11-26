@@ -7,8 +7,9 @@ import { HARDWARE } from "./en/hardware.js";
 import { CONFIG } from "./en/config.js";
 import { RACK } from "./en/rack.js";
 import { VLAN } from "./en/vlan.js";
+import { POWER } from "./en/power.js";
 
-export const PHRASES = { ...CALC, ...HARDWARE, ...CONFIG, ...RACK, ...VLAN };
+export const PHRASES = { ...CALC, ...HARDWARE, ...CONFIG, ...RACK, ...VLAN, ...POWER };
 
 /** Pola regex khusus [regex, pengganti] yang dicoba sebelum penggantian per potongan. */
 export const PATTERNS = [];

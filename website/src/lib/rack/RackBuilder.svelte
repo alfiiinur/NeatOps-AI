@@ -12,6 +12,7 @@
     addRack,
     removeRack,
     moveUnitToRack,
+  addHardwareToRack,
     qtyFromRacks,
     summarizeRacks,
     buildInterRackLinks,
@@ -39,10 +40,13 @@
   } from "./cabling/manualCabling.js";
   import { sanitizeNetwork, applyEndDevices, endDeviceIps } from "../network/vlan/vlanPlan.js";
   import { checkNetwork, cableVlanLabel } from "../network/vlan/vlanChecks.js";
+  import { newPower, sanitizePower, powerTarget, powerViewOf } from "./power/powerPlan.js";
+  import { buildPowerTopology } from "./power/powerTopology.js";
   import { buildTopology } from "../network/vlan/topology.js";
   import { currentRoute, navigate } from "../core/router.svelte.js";
   import { buildPath } from "../core/router.js";
   import ManualCablePanel from "./cabling/ManualCablePanel.svelte";
+  import PowerPanel from "./power/PowerPanel.svelte";
   import EndDevicePanel from "./cabling/EndDevicePanel.svelte";
   import InterRackLinkPanel from "./cabling/InterRackLinkPanel.svelte";
 
@@ -71,6 +75,8 @@
   let interLinks = $state([]);
   // Rencana VLAN dari halaman Jaringan & VLAN (hanya dibaca di sini, untuk label & peringatan kabel).
   let network = $state(sanitizeNetwork(null));
+  // Rantai daya (tab Daya & panel): disimpan di project, dibaca scene 3D & mini-map.
+  let power = $state(newPower());
   const result = $derived(racks[activeIdx] ?? null);
   const sum = $derived(summarizeRacks(racks));
   const interClean = $derived(interMode === "manual" ? cleanInterLinks(racks, interLinks) : { kept: [], dropped: [] });
@@ -86,6 +92,10 @@
   const ipsOf = (r) => new Map((r?.endDevices ?? []).map((d) => [d.id, endIps.get(`${r.id}:${d.id}`) ?? null]));
   const netChecks = $derived(network.vlans.length ? checkNetwork(netView, racks, inter.links) : null);
   const vlanStatusOf = (c) => netChecks?.edgeStatus[`${result?.id}/${c.id}`] ?? null;
+  function openCalculator() {
+    const id = currentRoute().projectId;
+    if (id) navigate(buildPath(id, "calculator"));
+  }
   function openVlan() {
     const id = currentRoute().projectId;
     if (id) navigate(buildPath(id, "vlan"));
@@ -102,7 +112,22 @@
   function setTopoPos(p) {
     racks = racks.map((x, i) => (i === activeIdx ? { ...x, topoPos: p } : x));
   }
-  const cablingOf = (r, reserved) => (r ? { dataCabling: r.dataCabling ?? "auto", manualCables: r.manualCables ?? [], endDevices: r.endDevices ?? [], endIps: ipsOf(r), reserved } : null);
+  const cablingOf = (r, reserved) => (r ? { dataCabling: r.dataCabling ?? "auto", manualCables: r.manualCables ?? [], endDevices: r.endDevices ?? [], endIps: ipsOf(r), powerTarget: r.powerTarget, reserved } : null);
+  // Label tujuan kabel mains (AVR / Panel listrik) mengikuti rantai daya; rak dievaluasi ulang bila berubah.
+  const powerTargetStr = $derived(powerTarget(power));
+  // Ringkasan untuk panel, AVR, PLN, dan grounding di 3D.
+  const powerView = $derived(powerViewOf(power, racks));
+  $effect(() => {
+    const t = powerTargetStr;
+    if (!racks.some((r) => r.powerTarget !== t)) return;
+    untrack(() => {
+      racks = racks.map((r) =>
+        r.powerTarget === t
+          ? r
+          : keepMeta({ ...r, powerTarget: t }, evaluateLayout(r.rackU, r.slots), interMode === "manual" ? reservedPortsFor(r.id, interClean.kept) : new Set()),
+      );
+    });
+  });
   function setResult(r) {
     racks = racks.map((x, i) => (i === activeIdx ? keepMeta(x, r, reservedActive) : x));
   }
@@ -148,6 +173,7 @@
     interMode = p.interMode === "manual" ? "manual" : "auto";
     interLinks = sanitizeInterLinks(p.interLinks);
     network = sanitizeNetwork(p.network);
+    power = sanitizePower(p.power);
     showAll = false;
     planNotes = [];
     rackMsg = "";
@@ -192,6 +218,7 @@
       activeRack: activeIdx,
       interMode,
       interLinks: $state.snapshot(interLinks),
+      power: $state.snapshot(power),
       result: null,
       mode,
       desk: $state.snapshot(desk),
@@ -578,9 +605,12 @@
     rackMsg = "";
   }
 
+  let newRackU = $state(""); // tinggi (U) untuk rak baru; kosong = ikut rak yang sedang dibuka
   function addNewRack() {
     if (dragKey) return;
-    const r = addRack(racks, result?.rackU ?? clampU(rackU));
+    const u = newRackU === "" ? (result?.rackU ?? clampU(rackU)) : clampU(newRackU);
+    newRackU = u;
+    const r = addRack(racks, u);
     if (!r.ok) {
       rackMsg = r.reason;
       return;
@@ -588,7 +618,27 @@
     racks = r.racks;
     activeIdx = r.index;
     showAll = false;
-    rackMsg = `${racks[activeIdx].nama} ditambahkan. Pindahkan unit ke sini lewat pilihan "Pindah ke rak" di tab Susunan.`;
+    hwPickerOpen = true;
+    rackMsg = `${racks[activeIdx].nama} ditambahkan. Pilih hardware di bawah untuk langsung mengisinya, atau pindahkan unit lewat "Pindah ke rak" di tab Susunan.`;
+    moveNote = rackMsg;
+  }
+
+  // Tambah hardware langsung ke rak yang sedang dibuka (tanpa kembali ke langkah 2).
+  let hwPickerOpen = $state(false);
+  let pickSearch = $state("");
+  const pickList = $derived(filterHardware(pickSearch));
+  const pickCats = $derived(categories.filter((c) => pickList.some((h) => h.kategori === c)));
+  function addHwToActive(hwId) {
+    if (dragKey) return;
+    const r = addHardwareToRack(racks, activeIdx, hwId);
+    if (!r.ok) {
+      rackMsg = r.reason;
+      moveNote = r.reason;
+      return;
+    }
+    racks = r.racks;
+    selectedQty = { ...selectedQty, [hwId]: (selectedQty[hwId] ?? 0) + 1 };
+    rackMsg = `${r.added.nama} ditambahkan ke ${r.added.rack}.`;
     moveNote = rackMsg;
   }
 
@@ -630,6 +680,49 @@
     showAll = false;
     rackMsg = "Semua unit dibagi ulang otomatis.";
     moveNote = rackMsg;
+  }
+
+  // ─── Tombol aksi pada saran: terapkan perbaikan atau lompat ke tool/hardware ──────
+  function runSuggestion(action, rackName) {
+    if (!action || dragKey) return;
+    const found = racks.findIndex((r) => r.nama === rackName);
+    const i = found >= 0 ? found : activeIdx;
+    switch (action.type) {
+      case "add-hw": {
+        const r = addHardwareToRack(racks, i, action.hwId);
+        if (!r.ok) {
+          rackMsg = r.reason;
+          moveNote = r.reason;
+          return;
+        }
+        racks = r.racks;
+        selectedQty = { ...selectedQty, [action.hwId]: (selectedQty[action.hwId] ?? 0) + 1 };
+        activeIdx = i;
+        showAll = false;
+        rackMsg = `${r.added.nama} ditambahkan ke ${r.added.rack}.`;
+        moveNote = rackMsg;
+        break;
+      }
+      case "open-tab":
+        activeIdx = i;
+        showAll = false;
+        resultTab = action.tab;
+        break;
+      case "go-step":
+        goStep(action.step);
+        break;
+      case "replan":
+        replanAll();
+        break;
+      case "reset-layout":
+        activeIdx = i;
+        showAll = false;
+        resetLayout();
+        break;
+      case "add-rack":
+        addNewRack();
+        break;
+    }
   }
 
   // Bersihkan listener kalau komponen dilepas di tengah seretan.
@@ -1010,10 +1103,16 @@
               {/each}
               {#if rackMsg}<div class="rb-alert rb-alert-warn" role="status">{rackMsg}</div>{/if}
               {#each sum.warnings as w}
-                <div class="rb-alert rb-alert-{w.level}" role="alert">{sum.count > 1 ? `${w.rack}: ` : ""}{w.text}</div>
+                <div class="rb-alert rb-alert-{w.level}" role="alert">
+                  <span>{sum.count > 1 ? `${w.rack}: ` : ""}{w.text}</span>
+                  {#if w.action}<button class="rb-alert-btn" onclick={() => runSuggestion(w.action, w.rack)}>{w.action.label}</button>{/if}
+                </div>
               {/each}
               {#each sum.tips as t}
-                <div class="rb-alert rb-alert-tip">{sum.count > 1 ? `${t.rack}: ` : ""}{t.text}</div>
+                <div class="rb-alert rb-alert-tip">
+                  <span>{sum.count > 1 ? `${t.rack}: ` : ""}{t.text}</span>
+                  {#if t.action}<button class="rb-alert-btn" onclick={() => runSuggestion(t.action, t.rack)}>{t.action.label}</button>{/if}
+                </div>
               {/each}
             </div>
           {/if}
@@ -1033,7 +1132,17 @@
               </button>
             {/if}
             <span class="rb-racktabs-gap"></span>
-            <button class="btn-small" onclick={addNewRack} disabled={racks.length >= MAX_RACKS || !!dragKey}>+ Tambah rak</button>
+            <div class="rb-addrack" role="group" aria-label="Tambah rak baru">
+              <label class="rb-newu" title="Tinggi rak baru (4–48U). Kosong = sama dengan rak yang dibuka.">
+                <span class="rb-newu-lbl">Tinggi</span>
+                <input type="number" min="4" max="48" inputmode="numeric" placeholder={String(result.rackU)} bind:value={newRackU} onkeydown={(e) => e.key === "Enter" && addNewRack()} aria-label="Tinggi rak baru dalam U" />
+                <span class="rb-newu-unit">U</span>
+              </label>
+              <button class="rb-addrack-btn" onclick={addNewRack} disabled={racks.length >= MAX_RACKS || !!dragKey}>+ Tambah rak</button>
+            </div>
+            {#if !showAll}
+              <button class="btn-small" class:active={hwPickerOpen} aria-expanded={hwPickerOpen} onclick={() => (hwPickerOpen = !hwPickerOpen)} disabled={!!dragKey}>+ Tambah hardware ke {result.nama}</button>
+            {/if}
             {#if racks.length > 1 || result.manual}
               <button class="btn-small btn-ghost" onclick={replanAll} disabled={!!dragKey} title="Bagi ulang semua unit secara otomatis">↺ Susun ulang otomatis</button>
             {/if}
@@ -1041,13 +1150,36 @@
               <button class="btn-small btn-ghost" onclick={() => deleteRack(activeIdx)} disabled={!!dragKey}>Hapus {result.nama}</button>
             {/if}
           </div>
+          {#if hwPickerOpen && !showAll}
+            <div class="rb-hwpick" role="region" aria-label="Tambah hardware ke {result.nama}">
+              <div class="rb-hwpick-head">
+                <b>{result.nama} · sisa {result.freeU}U</b>
+                <input type="search" placeholder="Cari hardware…" bind:value={pickSearch} aria-label="Cari hardware" />
+                <button class="btn-small btn-ghost" onclick={() => (hwPickerOpen = false)}>Tutup</button>
+              </div>
+              {#each pickCats as cat}
+                <div class="rb-hwpick-cat">
+                  <span>{cat}</span>
+                  <div class="rb-hwpick-items">
+                    {#each pickList.filter((h) => h.kategori === cat) as h (h.id)}
+                      <button class="rb-hwpick-item" onclick={() => addHwToActive(h.id)} disabled={h.unitHeight > result.freeU} title={h.unitHeight > result.freeU ? `Butuh ${h.unitHeight}U, sisa ${result.freeU}U` : `Tambah ${h.nama}`}>
+                        {h.nama} <em>{h.unitHeight}U</em>
+                      </button>
+                    {/each}
+                  </div>
+                </div>
+              {:else}
+                <p class="rb-hwpick-empty">Tidak ada hardware yang cocok.</p>
+              {/each}
+            </div>
+          {/if}
           {#if result.freeU === 0 && !showAll}
             <p class="rb-fullhint">{result.nama} sudah penuh. Tambah rak baru lalu pindahkan unit, atau susun ulang otomatis.</p>
           {/if}
 
           <div class="rb-card">
             <div class="tabs" role="tablist">
-              {#each [{ id: "susunan", label: "Susunan rak" }, { id: "3d", label: "Tampilan 3D" }, { id: "kabel", label: "Cable management" }, { id: "langkah", label: "Langkah instalasi" }] as t}
+              {#each [{ id: "susunan", label: "Susunan rak" }, { id: "3d", label: "Tampilan 3D" }, { id: "kabel", label: "Cable management" }, { id: "daya", label: "Daya & panel" }, { id: "langkah", label: "Langkah instalasi" }] as t}
                 <button role="tab" aria-selected={resultTab === t.id} class:active={resultTab === t.id} onclick={() => (resultTab = t.id)}>{t.label}</button>
               {/each}
             </div>
@@ -1178,9 +1310,14 @@
                       slots={racks[0].slots.map(withArt)}
                       rackU={racks[0].rackU}
                       name={racks[0].nama}
-                      neighbors={racks.slice(1).map((r) => ({ nama: r.nama, slots: r.slots.map(withArt) }))}
+                      neighbors={racks.slice(1).map((r) => ({ id: r.id, nama: r.nama, slots: r.slots.map(withArt) }))}
+                      mainId={racks[0].id}
+                      interLinks={inter.links}
                       cabling={cablingOf(racks[0], interMode === "manual" ? reservedPortsFor(racks[0].id, interClean.kept) : new Set())}
                       topoOverride={buildTopology(racks, inter.links)}
+                      powerTopoOverride={buildPowerTopology(racks, powerView)}
+                      {powerView}
+                      onPowerOpen={() => (resultTab = "daya")}
                       readonly
                     />
                   {:else}
@@ -1195,6 +1332,8 @@
                         cabling={cablingOf(result, reservedActive)}
                         onAddCable={(c) => setCabling({ dataCabling: "manual", manualCables: [...(result.manualCables ?? []), c] })}
                         topoPos={result.topoPos ?? {}}
+                        {powerView}
+                        onPowerOpen={() => (resultTab = "daya")}
                         onTopoPos={setTopoPos}
                         onCablingChange={setCabling}
                       />
@@ -1250,7 +1389,10 @@
                         Atur VLAN, subnet, dan mode port tiap switch/router di halaman terpisah.
                       {/if}
                     </span>
-                    <button class="btn-small btn-ghost" onclick={openVlan}>Atur VLAN →</button>
+                    <span class="rb-vlan-btns">
+                      <button class="btn-small btn-ghost" onclick={() => (resultTab = "daya")}>Atur daya &amp; panel →</button>
+                      <button class="btn-small btn-ghost" onclick={openVlan}>Atur VLAN →</button>
+                    </span>
                   </div>
                   {#if result.cableIssues}
                     <section class="rb-audit">
@@ -1366,6 +1508,8 @@
                     </div>
                   </section>
                 </div>
+              {:else if resultTab === "daya"}
+                <PowerPanel {power} {racks} onChange={(p) => (power = sanitizePower(p))} onCalculator={openCalculator} onOpenCables={() => (resultTab = "kabel")} />
               {:else}
                 {#if racks.length > 1}
                   <InstallPlayer result={{ racks, links: inter.links }} kind="racks" />
@@ -1634,7 +1778,10 @@
   .rb-score-label { font-family: var(--mono); font-size: 11.5px; color: var(--muted); }
 
   .rb-alerts { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
-  .rb-alert { padding: 8px 12px; border-radius: 8px; font-size: 13.5px; border: 1px solid; }
+  .rb-alert { padding: 8px 12px; border-radius: 8px; font-size: 13.5px; border: 1px solid; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .rb-alert-btn { flex: none; padding: 4px 12px; border-radius: 999px; border: 1px solid currentColor; background: rgba(255, 255, 255, 0.7); color: inherit; font: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background 0.15s, transform 0.15s; }
+  .rb-alert-btn:hover { background: #fff; transform: translateY(-1px); }
+  .rb-alert-btn:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
   .rb-alert-critical { background: rgba(210, 58, 64, 0.09); border-color: rgba(210, 58, 64, 0.4); color: #9b2328; }
   .rb-alert-warn { background: rgba(201, 138, 11, 0.09); border-color: rgba(201, 138, 11, 0.4); color: #7a4b00; }
   .rb-alert-tip { background: rgba(42, 157, 92, 0.09); border-color: rgba(42, 157, 92, 0.4); color: #145c35; }
@@ -1680,6 +1827,7 @@
   .rb-slot-detail h3 { margin: 0 0 10px; font-size: 14px; }
   .rb-iso-tab { min-width: 0; }
   .rb-vlan-link { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); margin: -4px 0 14px; }
+  .rb-vlan-btns { display: inline-flex; gap: 6px; flex-wrap: wrap; }
   .rb-cab-vlan { display: block; font-family: var(--mono); font-size: 11px; color: var(--muted); }
   .rb-cab-vlan.warn { color: var(--warn); }
   .rb-cab-vlan.bad { color: var(--bad); font-weight: 700; }
@@ -1784,6 +1932,28 @@
   .rb-racktab.active span { color: inherit; opacity: 0.8; }
   .rb-racktab:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
   .rb-racktabs-gap { flex: 1; }
+  .rb-addrack { display: inline-flex; align-items: stretch; align-self: center; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); overflow: hidden; }
+  .rb-addrack:focus-within { border-color: var(--lime-edge); }
+  .rb-newu { display: inline-flex; align-items: center; gap: 6px; padding: 0 10px; border-right: 1px solid var(--line-soft); cursor: text; }
+  .rb-newu-lbl { font-size: 12px; color: var(--muted); }
+  .rb-newu-unit { font-family: var(--mono); font-size: 12px; color: var(--faint); }
+  .rb-newu input { width: 44px; padding: 4px 2px; border: none; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; color: var(--text); font: inherit; font-family: var(--mono); font-size: 13px; text-align: center; outline: none; appearance: textfield; -moz-appearance: textfield; }
+  .rb-newu input::-webkit-outer-spin-button, .rb-newu input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  .rb-newu input:focus { border-bottom-color: var(--lime-edge); }
+  .rb-newu input::placeholder { color: var(--faint); }
+  .rb-addrack-btn { border: none; background: transparent; color: var(--text); font: inherit; font-size: 13px; font-weight: 600; padding: 7px 14px; cursor: pointer; white-space: nowrap; }
+  .rb-addrack-btn:hover:not(:disabled) { background: var(--bg-soft); }
+  .rb-addrack-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .rb-hwpick { border: 1px solid var(--line-soft); background: var(--panel); border-radius: 10px; padding: 12px 14px; margin-bottom: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 280px; overflow-y: auto; }
+  .rb-hwpick-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+  .rb-hwpick-head input { flex: 1; min-width: 160px; padding: 6px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-soft); color: var(--text); font: inherit; }
+  .rb-hwpick-cat > span { display: block; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--faint); margin-bottom: 4px; }
+  .rb-hwpick-items { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rb-hwpick-item { border: 1px solid var(--line); background: var(--bg-soft); color: var(--text); border-radius: 7px; padding: 5px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+  .rb-hwpick-item em { font-style: normal; font-family: var(--mono); font-size: 11px; color: var(--faint); margin-left: 4px; }
+  .rb-hwpick-item:hover:not(:disabled) { border-color: var(--lime-edge); }
+  .rb-hwpick-item:disabled { opacity: 0.45; cursor: not-allowed; }
+  .rb-hwpick-empty { margin: 0; font-size: 13px; color: var(--muted); }
   .rb-racktabs > .btn-small { align-self: center; }
   .rb-fullhint { margin: -4px 0 10px; font-size: 12.5px; color: var(--warn); }
   .rb-cap-note { margin-top: 6px; font-size: 12px; color: var(--muted); }

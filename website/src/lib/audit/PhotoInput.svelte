@@ -1,4 +1,4 @@
-﻿<script>
+<script>
   import { ANALYSIS_STEPS } from "./simulator.js";
   import { t } from "../core/i18n.svelte.js";
 
@@ -14,6 +14,10 @@
     onSample,
     onAnalyze,
     onClear,
+    editable = false,
+    onEditBox = null,
+    onAddBox = null,
+    onRemoveBox = null,
   } = $props();
 
   let drag      = $state(false);
@@ -47,6 +51,9 @@
   const MIN_SCALE = 1;      // never smaller than fit
   const MAX_SCALE = 8;
   const STEP      = 0.25;
+
+  // Rasio viewport mengikuti foto asli → tidak ada letterbox (garis hitam) di kiri/kanan.
+  const aspect = $derived(imgNatW && imgNatH ? imgNatW / imgNatH : 4 / 3);
 
   // ── Helpers ──────────────────────────────────────────────────────
 
@@ -118,6 +125,20 @@
   // After viewport is bound, centre the image
   $effect(() => {
     if (viewportEl && imgNatW && imgNatH) centerImage();
+  });
+
+  // Jaga gambar tetap terisi saat panel berubah ukuran (resize / ganti breakpoint).
+  $effect(() => {
+    if (!viewportEl) return;
+    const ro = new ResizeObserver(() => {
+      if (scale === MIN_SCALE) centerImage();
+      else {
+        const c = clamp(scale, ox, oy);
+        ox = c.x; oy = c.y;
+      }
+    });
+    ro.observe(viewportEl);
+    return () => ro.disconnect();
   });
 
   function onImgLoad(e) {
@@ -226,6 +247,70 @@
     if (files && files[0]) onPick(files[0]);
   }
 
+  // ── Koreksi manual kotak hardware (geser / ubah ukuran / tambah / hapus) ──
+  let editing = $state(false);
+  let layerEl = $state(null);
+  let selId = $state(null);
+  let draft = $state(null); // { id, bbox } pratinjau saat menyeret
+  let op = null; // operasi yang sedang berjalan
+
+  const MIN_EDIT = 0.02;
+  $effect(() => {
+    if (!editable) { editing = false; selId = null; draft = null; }
+  });
+
+  const shown = (b) => (draft && draft.id === b.id ? draft.bbox : b.bbox);
+
+  function startOp(e, b, mode) {
+    if (!editing || !b.id || !layerEl) return;
+    e.preventDefault();
+    e.stopPropagation();
+    selId = b.id;
+    const rect = layerEl.getBoundingClientRect();
+    op = { id: b.id, mode, sx: e.clientX, sy: e.clientY, bbox: [...b.bbox], w: rect.width || 1, h: rect.height || 1 };
+    window.addEventListener("pointermove", moveOp);
+    window.addEventListener("pointerup", endOp, { once: true });
+  }
+
+  function moveOp(e) {
+    if (!op) return;
+    const dx = (e.clientX - op.sx) / op.w;
+    const dy = (e.clientY - op.sy) / op.h;
+    let [x, y, w, h] = op.bbox;
+    let x1 = x + w, y1 = y + h;
+    const m = op.mode;
+    if (m === "move") {
+      const nx = Math.min(Math.max(x + dx, 0), 1 - w);
+      const ny = Math.min(Math.max(y + dy, 0), 1 - h);
+      draft = { id: op.id, bbox: [nx, ny, w, h] };
+      return;
+    }
+    if (m.includes("w")) x = Math.min(x + dx, x1 - MIN_EDIT);
+    if (m.includes("e")) x1 = Math.max(x1 + dx, x + MIN_EDIT);
+    if (m.includes("n")) y = Math.min(y + dy, y1 - MIN_EDIT);
+    if (m.includes("s")) y1 = Math.max(y1 + dy, y + MIN_EDIT);
+    x = Math.max(0, x); y = Math.max(0, y); x1 = Math.min(1, x1); y1 = Math.min(1, y1);
+    draft = { id: op.id, bbox: [x, y, x1 - x, y1 - y] };
+  }
+
+  function endOp() {
+    window.removeEventListener("pointermove", moveOp);
+    const d = draft;
+    op = null;
+    draft = null;
+    if (d) onEditBox?.(d.id, d.bbox);
+  }
+
+  function addBox() {
+    onAddBox?.([0.25, 0.4, 0.5, 0.08]);
+  }
+
+  function removeSelected() {
+    if (!selId) return;
+    onRemoveBox?.(selId);
+    selId = null;
+  }
+
   const pct = (v) => `${(v * 100).toFixed(2)}%`;
 </script>
 
@@ -318,6 +403,7 @@
       <figure
         class="photo-viewport"
         class:panning
+        style:aspect-ratio={aspect}
         style:touch-action={scale > MIN_SCALE ? "none" : "pan-y"}
         bind:this={viewportEl}
         onwheel={onWheel}
@@ -350,21 +436,44 @@
             onload={onImgLoad}
           />
           {#if boxes?.length}
-            <div class="bbox-layer" aria-hidden="true">
+            <div class="bbox-layer" class:editing bind:this={layerEl} aria-hidden={!editing}>
               {#each boxes as b}
+                {@const bb = shown(b)}
                 <div
                   class="bbox {b.tingkat}"
+                  class:editable={editing && b.id}
+                  class:selected={editing && b.id && b.id === selId}
                   data-bbox={b.nomor}
-                  style="left:{pct(b.bbox[0])}; top:{pct(b.bbox[1])}; width:{pct(b.bbox[2])}; height:{pct(b.bbox[3])}; opacity:{highlight && highlight.nomor !== b.nomor ? 0.25 : 1}"
+                  role="presentation"
+                  style="left:{pct(bb[0])}; top:{pct(bb[1])}; width:{pct(bb[2])}; height:{pct(bb[3])}; opacity:{highlight && highlight.nomor !== b.nomor && !highlight.related?.includes(b.nomor) ? 0.25 : 1}"
+                  onpointerdown={(e) => startOp(e, b, "move")}
                 >
                   <span class="bbox-tag">{String(b.nomor).startsWith("H") ? "" : "#"}{b.nomor}</span>
                   <span class="bbox-arrow">&#9660;</span>
+                  {#if editing && b.id}
+                    {#each ["nw", "ne", "sw", "se"] as c}
+                      <span class="bbox-handle {c}" role="presentation" onpointerdown={(e) => startOp(e, b, c)}></span>
+                    {/each}
+                  {/if}
                 </div>
               {/each}
             </div>
           {/if}
         </div>
       </figure>
+
+      {#if editable}
+        <div class="edit-bar">
+          <button type="button" class="zoom-btn" class:on={editing} aria-pressed={editing} onclick={() => (editing = !editing)}>
+            {editing ? t("photo.editDone") : t("photo.editBoxes")}
+          </button>
+          {#if editing}
+            <button type="button" class="zoom-btn" onclick={addBox}>{t("photo.addBox")}</button>
+            <button type="button" class="zoom-btn" disabled={!selId} onclick={removeSelected}>{t("photo.removeBox")}</button>
+            <span class="edit-hint">{t("photo.editHint")}</span>
+          {/if}
+        </div>
+      {/if}
 
       <div class="photo-meta">
         <span>{photo.name}</span>
@@ -376,6 +485,17 @@
 </div>
 
 <style>
+  .edit-bar { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 8px 0 0; }
+  .edit-bar .zoom-btn { border: 1px solid var(--line-soft); background: var(--panel-2); }
+  .edit-bar .zoom-btn.on { border-color: var(--lime-edge, var(--steel)); color: var(--text); }
+  .edit-hint { font-size: 11.5px; color: var(--faint); }
+  :global(.bbox-layer.editing .bbox.editable) { pointer-events: auto; cursor: move; touch-action: none; border-style: dashed; }
+  :global(.bbox.selected) { border-width: 3px; background: rgba(90, 169, 255, 0.2); }
+  :global(.bbox-handle) { position: absolute; width: 14px; height: 14px; background: #fff; border: 2px solid var(--steel); border-radius: 3px; touch-action: none; }
+  :global(.bbox-handle.nw) { left: -8px; top: -8px; cursor: nwse-resize; }
+  :global(.bbox-handle.ne) { right: -8px; top: -8px; cursor: nesw-resize; }
+  :global(.bbox-handle.sw) { left: -8px; bottom: -8px; cursor: nesw-resize; }
+  :global(.bbox-handle.se) { right: -8px; bottom: -8px; cursor: nwse-resize; }
   /* ── Analyze bar ── */
   .analyze-bar {
     display: flex;
@@ -448,12 +568,12 @@
   .photo-viewport {
     position: relative;
     width: 100%;
-    aspect-ratio: 4 / 3;
-    max-height: 420px;
+    aspect-ratio: 4 / 3; /* fallback; diganti inline sesuai rasio foto */
+    max-height: 460px;
     overflow: hidden;
     border-radius: 8px;
     border: 1px solid var(--line-soft);
-    background: #1a1917;   /* warm dark, matches theme */
+    background: transparent;   /* tanpa kotak hitam */
     cursor: grab;
     touch-action: pan-y; /* di-override inline saat zoom > 1 */
     user-select: none;

@@ -3,6 +3,7 @@ from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from openai import AsyncOpenAI
 from PIL import UnidentifiedImageError
 from pydantic import BaseModel, Field, ValidationError
 
@@ -11,6 +12,7 @@ from ..common.documents import extract_text, kind_of
 from ..core.cache import make_key, shared_cache
 from ..core.config import get_settings
 from ..vision.detect import Unit
+from ..vision.findings import resolved_identity, unit_id
 from ..vision.identify import CATEGORIES
 from ..clients.knowledge import load_knowledge_cached
 from ..clients.meta_client import MetaApiError, MetaClient, prepare_image
@@ -19,6 +21,8 @@ from ..workflows.pipeline import analyze_rack
 settings = get_settings()
 
 MAX_UPLOAD_BYTES = 15 * 1024 * 1024
+# Naikkan bila bentuk respons /analyze berubah: hanya membuang cache hasil akhir, bukan cache SAM/Muse (hemat token).
+RESPONSE_FORMAT = "resp-3"  # 3: rack_detected; 2: id hardware, bbox ter-snap, geometri rak, unit_ids pada temuan
 
 # Cache hasil akhir: foto + rack_u yang sama dijawab langsung tanpa panggilan model sama sekali.
 result_cache = shared_cache(
@@ -42,23 +46,45 @@ def get_meta_client() -> MetaClient:
         raise HTTPException(status_code=503, detail=str(e)) from e
 
 
-def unit_to_hardware(u: Unit, position: tuple[int, int] | None = None, uncertain: bool = False) -> dict:
+def ml_ai_enabled() -> bool:
+    return bool(settings.ml_ai_api_key and settings.ml_ai_base_url and settings.ml_ai_chat_model)
+
+
+def get_ml_ai_client() -> MetaClient | None:
+    """Klien khusus chat asisten (ML AI) bila dikonfigurasi, selain itu None."""
+    if not ml_ai_enabled():
+        return None
+    return MetaClient(
+        settings=settings,
+        client=AsyncOpenAI(base_url=settings.ml_ai_base_url, api_key=settings.ml_ai_api_key),
+    )
+
+
+def unit_to_hardware(
+    u: Unit,
+    position: tuple[int, int] | None = None,
+    uncertain: bool = False,
+    box: tuple[float, float, float, float] | None = None,
+    index: int | None = None,
+) -> dict:
     """Format yang sama dengan HARDWARE_POOL di frontend (simulator.js), plus posisi U.
 
     `u_uncertain` (hanya bila ada posisi): True bila ukuran/posisi U tidak dapat dipercaya (mis. UPS tower).
+    `box` = bbox yang sudah di-snap ke grid U (bawaan: bbox mentah). `index` memberi `id` "hw-N" yang dirujuk
+    `unit_ids` pada temuan.
     """
-    x, y, w, h = u.bbox
+    x, y, w, h = box or u.bbox
+    id_fields = {"id": unit_id(index)} if index is not None else {}
     u_fields = (
         {"u_start": position[0], "u_size": position[1], "u_uncertain": bool(uncertain)} if position else {}
     )
     ident = u.ident
-    jenis = u.cls.jenis
-    if ident and ident.jenis in CATEGORIES and ident.confidence >= 0.5:
-        jenis = ident.jenis  # koreksi kategori hanya bila model cukup yakin
-    # Nama dari Muse (membaca gambar) lebih dipercaya daripada nama kelas tebakan prompt SAM.
-    nama = ident.nama.strip() if ident and ident.nama.strip() and ident.confidence >= 0.5 else u.cls.nama
+    # Nama/kategori dari Muse (membaca gambar) lebih dipercaya daripada tebakan prompt SAM, bila cukup yakin.
+    nama, jenis = resolved_identity(u)
     return {
+        **id_fields,
         **u_fields,
+        "bbox_source": "detected",
         "nama": nama,
         "merek": " ".join(p for p in (ident.merek, ident.model) if p) if ident else "",
         "jenis": jenis,
@@ -144,14 +170,14 @@ async def analyze(
     except (UnidentifiedImageError, OSError) as e:
         raise HTTPException(status_code=400, detail="File bukan gambar yang valid.") from e
 
-    ckey = make_key(data, str(rack_u), settings.identify_model, str(settings.max_image_side))
+    ckey = make_key(data, str(rack_u), settings.identify_model, str(settings.max_image_side), f"rectify={settings.rectify}", RESPONSE_FORMAT)
     cached = result_cache.get("analyze", ckey)
     if cached is not None:
         return cached
 
     try:
         result = await analyze_rack(
-            client, data, rack_u=rack_u, knowledge=load_knowledge_cached(settings.knowledge_dir)
+            client, data, rack_u=rack_u, knowledge=load_knowledge_cached(settings.knowledge_dir), rectify=settings.rectify
         )
     except MetaApiError as e:
         raise HTTPException(status_code=502, detail=str(e)) from e
@@ -303,6 +329,9 @@ async def chat(
     used_model = model if model in CHAT_MODEL_IDS else default_chat_model()
     allowed = CHAT_MODEL_IDS[used_model]["efforts"]
     used_effort = effort if effort in allowed else ("xhigh" if effort == "max" else DEFAULT_EFFORT)
+    ml_client = get_ml_ai_client()
+    if ml_client is not None:  # provider ML AI: model sendiri, tanpa reasoning_effort khas Muse
+        client, used_model, used_effort = ml_client, settings.ml_ai_chat_model, None
     try:
         answer = await client.chat_text(
             system=system, messages=messages, images=images or None, model=used_model, reasoning_effort=used_effort
@@ -317,18 +346,41 @@ async def chat(
         "skipped": skipped,
     }
 
+def rack_detected(result) -> bool:
+    """Apakah foto ini benar-benar rak/perangkat jaringan? Tanpa unit sama sekali: tidak.
+
+    Unit yang semuanya hanya tebakan generik ("Perangkat", mis. layar, baju, meja) tanpa kabinet rak yang
+    terdeteksi juga dianggap bukan rak, supaya foto orang/ruangan tidak mendapat skor "Aman".
+    """
+    if not result.units or result.grid is None:
+        return False
+    return result.rack_found or any(u.cls.priority >= 0 for u in result.units)
+
+
 def build_response(result) -> dict:
     positions = result.positions or [None] * len(result.units)
     uncertain = result.u_uncertain or [False] * len(result.units)
+    boxes = result.boxes or [u.bbox for u in result.units]
+    g = result.grid
     return {
         "image": {"width": result.width, "height": result.height},
+        "rack_detected": rack_detected(result),
         "rack": {
-            "u_total": result.grid.total_u if result.grid else None,
+            "u_total": g.total_u if g else None,
             "u_estimated": result.u_estimated,
             "empty_slots": result.empty_slots,
             "gap_retries": result.retried_gaps,
+            # Geometri grid U (ternormalisasi) agar frontend bisa membatasi kotak ke area rak.
+            "u_h": round(g.u_h, 5) if g else None,
+            "top": round(g.top, 4) if g else None,
+            "bottom": round(g.bottom, 4) if g else None,
+            "x0": round(g.x0, 4) if g else None,
+            "x1": round(g.x1, 4) if g else None,
         },
-        "hardware": [unit_to_hardware(u, p, q) for u, p, q in zip(result.units, positions, uncertain)],
+        "hardware": [
+            unit_to_hardware(u, p, q, box=b, index=i)
+            for i, (u, p, q, b) in enumerate(zip(result.units, positions, uncertain, boxes))
+        ],
         "cables": [cluster_to_dict(c) for c in result.cables],
         "findings": result.findings,
     }

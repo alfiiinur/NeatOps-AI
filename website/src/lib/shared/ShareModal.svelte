@@ -34,6 +34,8 @@
         findingImages = await Promise.all(
           result.findings.map(async (f) => {
             try {
+              // Tanpa lokasi (anchor none) atau mode simulasi: tidak ada potongan foto.
+              if (!f.bbox || result.meta?.deteksi === "simulasi") return { nomor: f.nomor, dataUrl: null };
               return { nomor: f.nomor, dataUrl: await cropFinding(photo.dataUrl, f.bbox) };
             } catch {
               return { nomor: f.nomor, dataUrl: null };
@@ -45,7 +47,7 @@
       if (withVisual()) {
         status = t("share.stAfter");
         try {
-          after = await makeTidyAfter(photo.dataUrl, result.tidy.routes);
+          after = await makeTidyAfter(photo.dataUrl, result.meta?.deteksi === "simulasi" ? [] : result.tidy.routes);
         } catch {
           after = photo.dataUrl;
         }

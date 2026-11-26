@@ -160,3 +160,83 @@ async def test_assess_clusters_skips_very_small_clusters():
     tiny = CableCluster((0.1, 0.1, 0.03, 0.03), [cable(0.1, 0.1, 0.03, 0.03)])  # luas 0,0009
     await assess_clusters(Counter(), buf.getvalue(), [tiny])
     assert Counter.calls == 0 and tiny.assessment is None
+
+
+def test_cable_finding_has_unit_ids_and_bbox_inside_touched_units():
+    units = stacked_units()
+    cl = cluster_over(units, count=7)
+    f = build_cable_findings([cl], units, positions_for(units))[0]
+    assert f["unit_ids"] == [f"hw-{i + 1}" for i in cl.touched]
+    assert f["anchor"] == "cable" and f["bbox_source"] == "derived"
+    x, y, w, h = f["bbox"]
+    ux0 = min(u.bbox[0] for u in units)
+    uy0 = min(u.bbox[1] for u in units)
+    uy1 = max(u.bbox[1] + u.bbox[3] for u in units)
+    assert x >= ux0 - 1e-6 and y >= uy0 - 1e-6 and y + h <= uy1 + 1e-6
+
+
+def test_cluster_touching_no_unit_gives_no_finding():
+    units = stacked_units()
+    cl = CableCluster((0.95, 0.1, 0.03, 0.4), [cable(0.95, 0.1, 0.03, 0.4) for _ in range(8)])
+    cl.assessment = CableAssessment(kerapian="berantakan", kusut_menyilang=True, berlabel="tidak")
+    link_units([cl], units)
+    assert cl.touched == []
+    assert build_cable_findings([cl], units, positions_for(units)) == []
+
+
+# ── temuan non-kabel ────────────────────────────────────────────────────────────────────────────────
+from app.vision.detect import CLASS_BY_PROMPT as _CLS  # noqa: E402
+from app.vision.findings import build_hardware_findings  # noqa: E402
+
+UPS = _CLS["UPS"]
+
+
+def _stack(classes, h=0.1):
+    """Unit bertumpuk atas → bawah dengan posisi U (U1 di dasar), tinggi 1U tiap unit."""
+    units = [Unit(c, (0.1, 0.1 + i * h, 0.8, h), 0.9) for i, c in enumerate(classes)]
+    n = len(units)
+    return units, [(n - i, 1) for i in range(n)], [u.bbox for u in units]
+
+
+def test_heavy_unit_in_top_zone_gives_top_heavy_finding_with_unit_ids():
+    units, pos, boxes = _stack([UPS, SWITCH, SWITCH, SWITCH, SWITCH, SWITCH, SWITCH, SWITCH])  # UPS di U8 dari 8
+    f = build_hardware_findings(units, pos, boxes, [False] * 8, 8, [])
+    assert [x["id"] for x in f] == ["beban-berat-atas"]
+    assert f[0]["unit_ids"] == ["hw-1"] and f[0]["anchor"] == "unit"
+    assert f[0]["bbox"] == [round(v, 4) for v in boxes[0]]
+
+
+def test_heavy_unit_at_bottom_or_uncertain_or_tiny_rack_gives_no_finding():
+    units, pos, boxes = _stack([SWITCH] * 7 + [UPS])  # UPS paling bawah
+    assert build_hardware_findings(units, pos, boxes, [False] * 8, 8, []) == []
+    units, pos, boxes = _stack([UPS] + [SWITCH] * 7)
+    assert build_hardware_findings(units, pos, boxes, [True] + [False] * 7, 8, []) == []  # posisi U tak pasti
+    units, pos, boxes = _stack([UPS, SWITCH, SWITCH])
+    assert build_hardware_findings(units, pos, boxes, [False] * 3, 3, []) == []  # rak terlalu pendek
+
+
+def test_open_slots_give_ventilation_finding_but_filled_slots_do_not():
+    units, pos, boxes = _stack([SWITCH, SWITCH])
+    slots = [
+        {"u_start": 3, "u_end": 4, "bbox": [0.1, 0.5, 0.8, 0.2], "status": "kosong"},
+        {"u_start": 6, "u_end": 6, "bbox": [0.1, 0.8, 0.8, 0.1], "status": "terisi"},
+    ]
+    f = build_hardware_findings(units, pos, boxes, [False] * 2, 8, slots)
+    assert [x["id"] for x in f] == ["ventilasi-tertutup"]
+    assert f[0]["anchor"] == "slot" and f[0]["unit_ids"] == []
+    assert f[0]["bbox"] == [0.1, 0.5, 0.8, 0.2] and "U3–U4" in f[0]["deskripsi"] and "U6" not in f[0]["deskripsi"]
+    assert build_hardware_findings(units, pos, boxes, [False] * 2, 8, [slots[1]]) == []
+
+
+def test_low_confidence_generic_unit_is_named_unknown_but_specific_class_keeps_name():
+    from types import SimpleNamespace as NS
+
+    from app.vision.findings import UNKNOWN_DEVICE, resolved_identity
+
+    generic = _CLS["equipment"]
+    weak = NS(nama="Cisco 2960", jenis="Jaringan", confidence=0.3)
+    strong = NS(nama="Cisco 2960", jenis="Jaringan", confidence=0.9)
+    assert resolved_identity(Unit(generic, (0, 0, 1, 1), 0.9))[0] == UNKNOWN_DEVICE  # belum diidentifikasi
+    assert resolved_identity(Unit(generic, (0, 0, 1, 1), 0.9, ident=weak))[0] == UNKNOWN_DEVICE
+    assert resolved_identity(Unit(generic, (0, 0, 1, 1), 0.9, ident=strong))[0] == "Cisco 2960"
+    assert resolved_identity(Unit(SWITCH, (0, 0, 1, 1), 0.9, ident=weak))[0] == "Switch"  # tebakan SAM spesifik dipertahankan

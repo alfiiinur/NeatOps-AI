@@ -11,7 +11,6 @@ export const ID = {
   "nav.calculator": "Kalkulator",
   "nav.settings": "Pengaturan",
   "nav.settingsAria": "Pengaturan",
-  "nav.badge": "SIMULASI FRONTEND",
 
   // Pengaturan
   "set.title": "Pengaturan",
@@ -114,6 +113,11 @@ export const ID = {
     "Pratinjau foto rak — scroll atau cubit untuk zoom, seret untuk geser",
   "photo.imgAlt": "Foto rak yang dianalisis",
   "photo.findingsCount": "{n} temuan",
+  "photo.editBoxes": "Koreksi kotak",
+  "photo.editDone": "Selesai koreksi",
+  "photo.addBox": "+ Tambah kotak",
+  "photo.removeBox": "Hapus kotak",
+  "photo.editHint": "Seret kotak untuk menggeser, tarik sudut untuk mengubah ukuran. Tab Temuan, Visual rapi, dan 3D ikut berubah.",
   "photo.step1": "Membaca foto & menyesuaikan orientasi",
   "photo.step2": "Mendeteksi perangkat, kabel & panel",
   "photo.step3": "Menilai kerapian instalasi kabel",
@@ -158,6 +162,15 @@ export const ID = {
   "res.sev.ringan": "Ringan",
   "res.photoLabel": "foto:",
   "res.confidence": "keyakinan {n}%",
+  "res.simNoBoxes":
+    "Mode simulasi: hasil ini contoh, bukan deteksi pada foto Anda, jadi kotak tidak digambar di atas foto. Hubungkan backend deteksi untuk melihat kotak pada perangkat.",
+  "res.noLocation": "Saran umum, tidak terkait satu perangkat di foto.",
+  "res.relatedUnits": "unit:",
+  "res.noRackTitle": "Tidak terdeteksi sebagai rak server",
+  "res.noRackBody": "Sistem tidak menemukan rak server, switch, atau perangkat jaringan pada foto ini, jadi tidak ada skor yang diberikan.",
+  "res.noRackTip1": "Pastikan rak terlihat utuh dan menghadap kamera.",
+  "res.noRackTip2": "Ambil dari depan dengan cahaya cukup, hindari foto terlalu dekat atau terlalu gelap.",
+  "res.noRackTip3": "Gunakan foto rak/panel, bukan foto orang atau ruangan.",
   "res.cropAria": "Potongan foto area temuan #{n}",
   "res.fixSteps": "Langkah perbaikan:",
   "res.ref": "Acuan: {ref} · Estimasi: {effort}",
@@ -237,6 +250,75 @@ export const ID = {
   "land.start": "Mulai",
   "land.continue": "Lanjutkan project terakhir",
   "land.langAria": "Bahasa",
+  "land.rackKicker": "Rakit rak server",
+  "land.rackTitle": "Pasang server ke rak, langkah demi langkah.",
+  "land.rackSub":
+    "Pilih hardware, NeatOps menyusun posisi tiap unit di rak dan memutar animasi pemasangannya. Gulir untuk memasang.",
+  "land.rack.rail": "Pasang rak dan rail",
+  "land.rack.rail.d": "Rak berdiri level dan rail siap menerima unit.",
+  "land.rack.units": "Masukkan unit dari bawah",
+  "land.rack.units.d":
+    "UPS, PDU, server, switch, lalu patch panel meluncur masuk dan dikunci dengan sekrup.",
+  "land.rack.cable": "Rapikan kabel",
+  "land.rack.cable.d":
+    "Kabel daya di kiri, data di kanan, masing-masing punya jalur.",
+  "land.rack.power": "Hidupkan berurutan",
+  "land.rack.power.d":
+    "UPS dulu, lalu PDU, jaringan, dan server. Slot kosong ditutup blanking panel.",
+  "land.rackCta": "Coba Rakit Rak",
+  "land.rackHudScan": "Pindai keamanan",
+  "land.rackHudConfig": "Konfigurasi",
+  "land.rackHudConfigVal": "Tersinkron",
+  "land.rackHudConfigBad": "Bermasalah",
+  "land.rackHudConfigFix": "Memperbaiki",
+  "land.rackHudSecurity": "Skor keamanan",
+  "land.rackFixTitle": "Temuan & perbaikan",
+  "land.rackFixTangleBad": "Patch cord kusut melintang di depan unit",
+  "land.rackFixTangleOk": "Kabel data lewat cable manager, panjang pas",
+  "land.rackFixPowerBad": "Kabel daya & data bercampur, tanpa kode warna",
+  "land.rackFixPowerOk": "Daya di kiri, data di kanan, warna standar",
+  "land.rackFixFloorBad": "Kabel menjuntai ke lantai, rawan tersandung",
+  "land.rackFixFloorOk": "Kabel diikat velcro & berlabel",
+  "land.rackFixBlankBad": "Slot U kosong terbuka, aliran udara bocor",
+  "land.rackFixBlankOk": "Blanking panel terpasang",
+  "land.rackBefore": "Sebelum",
+  "land.rackAfter": "Sesudah",
+  "land.rackBeforeNote":
+    "{n} temuan: kabel kusut, daya & data bercampur, kabel di lantai, slot terbuka.",
+  "land.rackAfterNote": "Memindai ulang hasil perbaikan…",
+  "land.rackAfterNoteDone":
+    "0 temuan. Kabel rapi, urutan daya benar, konfigurasi optimal.",
+  "land.deskKicker": "Meja kerja",
+  "land.deskTitle": "Atur meja kerja sampai kabelnya.",
+  "land.deskSub":
+    "Monitor, PC, keyboard, dan perangkat lain ditaruh di posisi yang pas, lalu kabel data dan dayanya digambar.",
+  "land.desk.units": "Taruh perangkat",
+  "land.desk.units.d":
+    "PC, monitor, keyboard, dan lainnya turun ke posisinya di atas meja.",
+  "land.desk.cable": "Sambungkan kabel",
+  "land.desk.cable.d":
+    "Kabel data dan daya ditarik rapi ke perangkat dan stop kontak.",
+  "land.desk.power": "Nyalakan",
+  "land.desk.power.d": "Stop kontak dulu, lalu perangkat satu per satu.",
+  "land.deskCta": "Coba Meja Kerja",
+  "land.segKicker": "Segmentasi jaringan",
+  "land.segTitle": "Satu jaringan datar jadi segmen yang terpisah.",
+  "land.segSub":
+    "Pisahkan Staff, Server, CCTV, dan Guest ke VLAN dengan subnet masing-masing, lalu atur siapa boleh menjangkau siapa.",
+  "land.seg.0": "Mulai dari jaringan datar",
+  "land.seg.0.d":
+    "Semua perangkat dalam satu segmen. Tamu atau perangkat bermasalah bisa menjangkau server.",
+  "land.seg.1": "Bagi per VLAN dan subnet",
+  "land.seg.1.d":
+    "Tiap kelompok dapat VLAN ID dan blok alamat sendiri, dihitung otomatis dari satu blok induk.",
+  "land.seg.2": "Tetapkan kebijakan",
+  "land.seg.2.d":
+    "Lalu lintas antar-segmen lewat firewall: Staff ke Server diizinkan, Guest ke Server ditolak.",
+  "land.segCta": "Atur Segmentasi",
+  "land.segAllowed": "Staff → Server: diizinkan",
+  "land.segBlocked": "Guest → Server: ditolak",
+  "land.segAria":
+    "Diagram segmentasi jaringan: perangkat dipisah menjadi VLAN Staff, Server, CCTV, dan Guest.",
   "land.addPhoto": "Tambah foto",
   "land.send": "Kirim dan lanjut ke workspace",
   "land.cardGo": "Lanjut ke workspace",
@@ -247,7 +329,8 @@ export const ID = {
   "land.cardRackDesc": "Susun rak secara visual dalam 3D.",
   "land.eyebrow": "AI untuk rak server & panel listrik",
   "land.scroll": "Gulir ke bawah",
-  "land.marquee": "Kerapian kabel / Keamanan listrik / Inventaris perangkat / Rekomendasi perbaikan",
+  "land.marquee":
+    "Kerapian kabel / Keamanan listrik / Inventaris perangkat / Rekomendasi perbaikan",
   "land.briefKicker": "Ceritakan dulu",
   "land.briefTitle": "Apa yang ingin Anda capai dengan rak ini?",
   "land.briefPlaceholder":
@@ -258,17 +341,22 @@ export const ID = {
   "land.chip4": "Rencana upgrade rak",
   "land.photoRemove": "Hapus foto",
   "land.photoErr": "Berkas harus berupa gambar.",
-  "land.briefHint": "Semua isian opsional. Foto dan catatan hanya disimpan di browser Anda.",
+  "land.briefHint":
+    "Semua isian opsional. Foto dan catatan hanya disimpan di browser Anda.",
   "land.showKicker": "Lihat langsung",
   "land.showTitle": "Kenali perangkat di rak Anda dalam 3D.",
   "land.m1": "Switch rackmount 24 port",
-  "land.m1d": "Port RJ45, uplink SFP, LED status, dan braket rack, lengkap dengan titik keterangan.",
+  "land.m1d":
+    "Port RJ45, uplink SFP, LED status, dan braket rack, lengkap dengan titik keterangan.",
   "land.m2": "Firewall",
-  "land.m2d": "Port WAN, LAN/DMZ, dan manajemen. Tahu posisi tiap koneksi sebelum menarik kabel.",
+  "land.m2d":
+    "Port WAN, LAN/DMZ, dan manajemen. Tahu posisi tiap koneksi sebelum menarik kabel.",
   "land.m3": "Server rack 2U",
-  "land.m3d": "Bay disk, bezel, dan panel belakang. Dasar untuk menghitung ruang dan daya.",
+  "land.m3d":
+    "Bay disk, bezel, dan panel belakang. Dasar untuk menghitung ruang dan daya.",
   "land.m4": "UPS rackmount",
-  "land.m4d": "Cadangan daya untuk seluruh rak. Cek kapasitas dan jalur kabelnya.",
+  "land.m4d":
+    "Cadangan daya untuk seluruh rak. Cek kapasitas dan jalur kabelnya.",
   "land.showCta": "Jelajahi semua model",
   "land.showHint": "Gulir untuk memutar",
   "land.howKicker": "Cara kerja",
@@ -345,7 +433,6 @@ export const EN = {
   "nav.calculator": "Calculators",
   "nav.settings": "Settings",
   "nav.settingsAria": "Settings",
-  "nav.badge": "FRONTEND SIMULATION",
 
   // Settings
   "set.title": "Settings",
@@ -447,6 +534,11 @@ export const EN = {
   "photo.viewAria": "Rack photo preview — scroll or pinch to zoom, drag to pan",
   "photo.imgAlt": "Analyzed rack photo",
   "photo.findingsCount": "{n} findings",
+  "photo.editBoxes": "Correct boxes",
+  "photo.editDone": "Done correcting",
+  "photo.addBox": "+ Add box",
+  "photo.removeBox": "Delete box",
+  "photo.editHint": "Drag a box to move it, drag a corner to resize. Findings, Tidy and 3D update automatically.",
   "photo.step1": "Reading the photo & adjusting orientation",
   "photo.step2": "Detecting devices, cables & panels",
   "photo.step3": "Assessing cable installation tidiness",
@@ -490,6 +582,15 @@ export const EN = {
   "res.sev.ringan": "Minor",
   "res.photoLabel": "photo:",
   "res.confidence": "confidence {n}%",
+  "res.simNoBoxes":
+    "Simulation mode: this is sample output, not detection on your photo, so no boxes are drawn on it. Connect the detection backend to see boxes on devices.",
+  "res.noLocation": "General advice, not tied to a single device in the photo.",
+  "res.relatedUnits": "units:",
+  "res.noRackTitle": "Not detected as a server rack",
+  "res.noRackBody": "The system found no server rack, switch, or network device in this photo, so no score was given.",
+  "res.noRackTip1": "Make sure the whole rack is visible and facing the camera.",
+  "res.noRackTip2": "Shoot from the front with enough light; avoid shots that are too close or too dark.",
+  "res.noRackTip3": "Use a photo of a rack/panel, not of a person or a room.",
   "res.cropAria": "Photo crop of finding area #{n}",
   "res.fixSteps": "Fix steps:",
   "res.ref": "Reference: {ref} · Estimate: {effort}",
@@ -570,6 +671,77 @@ export const EN = {
   "land.start": "Start",
   "land.continue": "Continue last project",
   "land.langAria": "Language",
+  "land.rackKicker": "Rack builder",
+  "land.rackTitle": "Mount servers in the rack, step by step.",
+  "land.rackSub":
+    "Pick the hardware and NeatOps places every unit in the rack and plays the install animation. Scroll to mount.",
+  "land.rack.rail": "Set up the rack and rails",
+  "land.rack.rail.d":
+    "The rack stands level and the rails are ready for units.",
+  "land.rack.units": "Slide units in from the bottom",
+  "land.rack.units.d":
+    "UPS, PDU, servers, switch, then patch panel slide in and get screwed down.",
+  "land.rack.cable": "Tidy the cables",
+  "land.rack.cable.d":
+    "Power on the left, data on the right, each with its own path.",
+  "land.rack.power": "Power on in order",
+  "land.rack.power.d":
+    "UPS first, then PDU, network, and servers. Empty slots get blanking panels.",
+  "land.rackCta": "Try Rack Builder",
+  "land.rackHudScan": "Security scan",
+  "land.rackHudConfig": "Configuration",
+  "land.rackHudConfigVal": "Synced",
+  "land.rackHudConfigBad": "Issues found",
+  "land.rackHudConfigFix": "Remediating",
+  "land.rackHudSecurity": "Security score",
+  "land.rackFixTitle": "Findings & fixes",
+  "land.rackFixTangleBad": "Tangled patch cords across the unit fronts",
+  "land.rackFixTangleOk": "Data cables routed through managers, right length",
+  "land.rackFixPowerBad": "Power & data mixed, no color coding",
+  "land.rackFixPowerOk":
+    "Power on the left, data on the right, standard colors",
+  "land.rackFixFloorBad": "Cables hanging to the floor, trip hazard",
+  "land.rackFixFloorOk": "Cables velcro-tied & labeled",
+  "land.rackFixBlankBad": "Open empty U slots leak airflow",
+  "land.rackFixBlankOk": "Blanking panels fitted",
+  "land.rackBefore": "Before",
+  "land.rackAfter": "After",
+  "land.rackBeforeNote":
+    "{n} findings: tangled cables, mixed power & data, cables on the floor, open slots.",
+  "land.rackAfterNote": "Re-scanning the fixed rack…",
+  "land.rackAfterNoteDone":
+    "0 findings. Tidy cables, correct power order, optimal configuration.",
+  "land.deskKicker": "Workstation desk",
+  "land.deskTitle": "Plan the desk, cables included.",
+  "land.deskSub":
+    "Monitors, PC, keyboard, and other gear are placed in the right spots, then data and power cables are drawn.",
+  "land.desk.units": "Place the devices",
+  "land.desk.units.d":
+    "PC, monitors, keyboard, and more drop into position on the desk.",
+  "land.desk.cable": "Connect the cables",
+  "land.desk.cable.d":
+    "Data and power cables are routed neatly to devices and the power strip.",
+  "land.desk.power": "Power on",
+  "land.desk.power.d": "The power strip first, then each device.",
+  "land.deskCta": "Try the Desk Planner",
+  "land.segKicker": "Network segmentation",
+  "land.segTitle": "One flat network becomes separate segments.",
+  "land.segSub":
+    "Split Staff, Server, CCTV, and Guest into VLANs with their own subnets, then decide who can reach whom.",
+  "land.seg.0": "Start from a flat network",
+  "land.seg.0.d":
+    "Every device sits in one segment. A guest or a faulty device can reach the servers.",
+  "land.seg.1": "Split by VLAN and subnet",
+  "land.seg.1.d":
+    "Each group gets its own VLAN ID and address block, calculated automatically from one parent block.",
+  "land.seg.2": "Set the policy",
+  "land.seg.2.d":
+    "Traffic between segments goes through the firewall: Staff to Server is allowed, Guest to Server is denied.",
+  "land.segCta": "Plan Segmentation",
+  "land.segAllowed": "Staff → Server: allowed",
+  "land.segBlocked": "Guest → Server: denied",
+  "land.segAria":
+    "Network segmentation diagram: devices split into Staff, Server, CCTV, and Guest VLANs.",
   "land.addPhoto": "Add photo",
   "land.send": "Send and continue to workspace",
   "land.cardGo": "Go to workspace",
@@ -580,7 +752,8 @@ export const EN = {
   "land.cardRackDesc": "Assemble a rack visually in 3D.",
   "land.eyebrow": "AI for server racks & electrical panels",
   "land.scroll": "Scroll down",
-  "land.marquee": "Cable tidiness / Electrical safety / Device inventory / Fix recommendations",
+  "land.marquee":
+    "Cable tidiness / Electrical safety / Device inventory / Fix recommendations",
   "land.briefKicker": "Tell us first",
   "land.briefTitle": "What do you want to achieve with this rack?",
   "land.briefPlaceholder":
@@ -591,17 +764,22 @@ export const EN = {
   "land.chip4": "Rack upgrade plan",
   "land.photoRemove": "Remove photo",
   "land.photoErr": "The file must be an image.",
-  "land.briefHint": "Everything is optional. The photo and notes stay in your browser only.",
+  "land.briefHint":
+    "Everything is optional. The photo and notes stay in your browser only.",
   "land.showKicker": "See it live",
   "land.showTitle": "Know the devices in your rack in 3D.",
   "land.m1": "24-port rackmount switch",
-  "land.m1d": "RJ45 ports, SFP uplinks, status LEDs, and rack ears, with labelled hotspots.",
+  "land.m1d":
+    "RJ45 ports, SFP uplinks, status LEDs, and rack ears, with labelled hotspots.",
   "land.m2": "Firewall",
-  "land.m2d": "WAN, LAN/DMZ, and management ports. Know where each connection goes before pulling cable.",
+  "land.m2d":
+    "WAN, LAN/DMZ, and management ports. Know where each connection goes before pulling cable.",
   "land.m3": "2U rack server",
-  "land.m3d": "Drive bays, bezel, and rear panel. The basis for space and power planning.",
+  "land.m3d":
+    "Drive bays, bezel, and rear panel. The basis for space and power planning.",
   "land.m4": "Rackmount UPS",
-  "land.m4d": "Backup power for the whole rack. Check its capacity and cable paths.",
+  "land.m4d":
+    "Backup power for the whole rack. Check its capacity and cable paths.",
   "land.showCta": "Explore all models",
   "land.showHint": "Scroll to rotate",
   "land.howKicker": "How it works",

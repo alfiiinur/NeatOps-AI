@@ -1,20 +1,56 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { analyzeWithBackend, backendUrl, BackendError } from "../src/lib/audit/backend.js";
+import {
+  analyzeWithBackend,
+  backendUrl,
+  BackendError,
+} from "../src/lib/audit/backend.js";
 import { analyzePhoto } from "../src/lib/audit/simulator.js";
 
 const PHOTO = { name: "rak.jpg", dataUrl: "data:image/jpeg;base64,AAAA" };
 const toBlob = async () => new Blob(["x"], { type: "image/jpeg" });
 
-const okResponse = (body) => ({ ok: true, status: 200, json: async () => body });
-const errResponse = (status, body) => ({ ok: false, status, json: async () => body });
+const okResponse = (body) => ({
+  ok: true,
+  status: 200,
+  json: async () => body,
+});
+const errResponse = (status, body) => ({
+  ok: false,
+  status,
+  json: async () => body,
+});
 
 const BACKEND = {
   image: { width: 800, height: 1200 },
-  rack: { u_total: 12, empty_slots: [{ u_start: 5, u_end: 6, bbox: [0.1, 0.4, 0.8, 0.1] }], gap_retries: 1 },
+  rack: {
+    u_total: 12,
+    empty_slots: [{ u_start: 5, u_end: 6, bbox: [0.1, 0.4, 0.8, 0.1] }],
+    gap_retries: 1,
+  },
   hardware: [
-    { nama: "UPS", merek: "APC Smart-UPS", jenis: "Daya", tipe: "", jumlah: 1, bbox: [0.1, 0.8, 0.8, 0.12], confidence: 0.91, u_start: 1, u_size: 2 },
-    { nama: "Switch", merek: "", jenis: "Jaringan", tipe: "24-port", jumlah: 1, bbox: [0.1, 0.1, 0.8, 0.06], confidence: 0.8, u_start: 11, u_size: 1 },
+    {
+      nama: "UPS",
+      merek: "APC Smart-UPS",
+      jenis: "Daya",
+      tipe: "",
+      jumlah: 1,
+      bbox: [0.1, 0.8, 0.8, 0.12],
+      confidence: 0.91,
+      u_start: 1,
+      u_size: 2,
+    },
+    {
+      nama: "Switch",
+      merek: "",
+      jenis: "Jaringan",
+      tipe: "24-port",
+      jumlah: 1,
+      bbox: [0.1, 0.1, 0.8, 0.06],
+      confidence: 0.8,
+      u_start: 11,
+      u_size: 1,
+    },
   ],
   cables: [],
   findings: [
@@ -40,7 +76,10 @@ describe("backendUrl", () => {
     assert.equal(backendUrl({ VITE_API_URL: "   " }), "");
   });
   it("membuang spasi dan garis miring penutup", () => {
-    assert.equal(backendUrl({ VITE_API_URL: " http://localhost:8000/ " }), "http://localhost:8000");
+    assert.equal(
+      backendUrl({ VITE_API_URL: " http://localhost:8000/ " }),
+      "http://localhost:8000",
+    );
   });
 });
 
@@ -51,10 +90,16 @@ describe("analyzeWithBackend", () => {
       seen = { url, init };
       return okResponse(BACKEND);
     };
-    const data = await analyzeWithBackend(PHOTO, { apiUrl: "http://x:8000", fetchImpl, toBlob });
+    const data = await analyzeWithBackend(PHOTO, {
+      apiUrl: "http://x:8000",
+      fetchImpl,
+      toBlob,
+    });
     assert.equal(seen.url, "http://x:8000/analyze");
     assert.equal(seen.init.method, "POST");
-    assert.ok(seen.init.body instanceof FormData && seen.init.body.get("photo"));
+    assert.ok(
+      seen.init.body instanceof FormData && seen.init.body.get("photo"),
+    );
     assert.equal(data.hardware.length, 2);
   });
 
@@ -71,8 +116,15 @@ describe("analyzeWithBackend", () => {
 
   it("status non-2xx → BackendError dengan pesan detail dari server", async () => {
     await assert.rejects(
-      analyzeWithBackend(PHOTO, { apiUrl: "http://x", toBlob, fetchImpl: async () => errResponse(502, { detail: "SAM gagal" }) }),
-      (e) => e instanceof BackendError && e.status === 502 && e.message === "SAM gagal",
+      analyzeWithBackend(PHOTO, {
+        apiUrl: "http://x",
+        toBlob,
+        fetchImpl: async () => errResponse(502, { detail: "SAM gagal" }),
+      }),
+      (e) =>
+        e instanceof BackendError &&
+        e.status === 502 &&
+        e.message === "SAM gagal",
     );
   });
 
@@ -85,22 +137,42 @@ describe("analyzeWithBackend", () => {
           throw new TypeError("fetch failed");
         },
       }),
-      (e) => e instanceof BackendError && /tidak dapat dihubungi/.test(e.message),
+      (e) =>
+        e instanceof BackendError && /tidak dapat dihubungi/.test(e.message),
     );
   });
 
   it("timeout → BackendError", async () => {
     const fetchImpl = (url, { signal }) =>
-      new Promise((_, reject) => signal.addEventListener("abort", () => reject(Object.assign(new Error("abort"), { name: "AbortError" }))));
+      new Promise((_, reject) =>
+        signal.addEventListener("abort", () =>
+          reject(Object.assign(new Error("abort"), { name: "AbortError" })),
+        ),
+      );
     await assert.rejects(
-      analyzeWithBackend(PHOTO, { apiUrl: "http://x", toBlob, fetchImpl, timeoutMs: 20 }),
+      analyzeWithBackend(PHOTO, {
+        apiUrl: "http://x",
+        toBlob,
+        fetchImpl,
+        timeoutMs: 20,
+      }),
       (e) => e instanceof BackendError && /timeout/.test(e.message),
     );
   });
 
   it("respons tanpa hardware → BackendError; tanpa apiUrl → BackendError", async () => {
-    await assert.rejects(analyzeWithBackend(PHOTO, { apiUrl: "http://x", toBlob, fetchImpl: async () => okResponse({}) }), BackendError);
-    await assert.rejects(analyzeWithBackend(PHOTO, { apiUrl: "", toBlob }), BackendError);
+    await assert.rejects(
+      analyzeWithBackend(PHOTO, {
+        apiUrl: "http://x",
+        toBlob,
+        fetchImpl: async () => okResponse({}),
+      }),
+      BackendError,
+    );
+    await assert.rejects(
+      analyzeWithBackend(PHOTO, { apiUrl: "", toBlob }),
+      BackendError,
+    );
   });
 });
 
@@ -116,7 +188,10 @@ describe("analyzePhoto dengan hasil backend", () => {
 
   it("hardware diganti deteksi nyata, urut atas→bawah, lengkap dengan posisi U", () => {
     const r = analyzePhoto(KEY, "rak.jpg", BACKEND);
-    assert.deepEqual(r.hardware.map((h) => h.nama), ["Switch", "UPS"]);
+    assert.deepEqual(
+      r.hardware.map((h) => h.nama),
+      ["Switch", "UPS"],
+    );
     const ups = r.hardware[1];
     assert.equal(ups.merek, "APC Smart-UPS");
     assert.equal(ups.keyakinan, 91);
@@ -124,7 +199,14 @@ describe("analyzePhoto dengan hasil backend", () => {
     assert.equal(ups.u_size, 2);
     assert.equal(r.hardware[0].merek, "—"); // merek tidak terbaca
     for (const h of r.hardware) {
-      assert.ok(h.nama && h.jenis && h.tipe && h.jumlah >= 1 && h.bbox.length === 4 && h.keyakinan >= 0);
+      assert.ok(
+        h.nama &&
+          h.jenis &&
+          h.tipe &&
+          h.jumlah >= 1 &&
+          h.bbox.length === 4 &&
+          h.keyakinan >= 0,
+      );
     }
   });
 
@@ -134,31 +216,72 @@ describe("analyzePhoto dengan hasil backend", () => {
     for (let i = 0; i < 200; i++) {
       key = `k${i}`;
       const sim = analyzePhoto(key, "x.jpg");
-      if (sim.findings.some((f) => ["kabel-berserakan", "tanpa-label", "kabel-terjepit", "patch-acakan"].includes(f.id))) break;
+      if (
+        sim.findings.some((f) =>
+          [
+            "kabel-berserakan",
+            "tanpa-label",
+            "kabel-terjepit",
+            "patch-acakan",
+          ].includes(f.id),
+        )
+      )
+        break;
     }
     const sim = analyzePhoto(key, "x.jpg");
     const real = analyzePhoto(key, "x.jpg", BACKEND);
 
-    const simCableIds = ["kabel-berserakan", "tanpa-label", "kabel-terjepit", "patch-acakan"];
+    const cableIds = [
+      "kabel-berserakan",
+      "tanpa-label",
+      "kabel-terjepit",
+      "patch-acakan",
+    ];
+    // Temuan geometri ini juga digantikan backend (build_hardware_findings); stek-menumpuk dibuang
+    // karena soket PDU belum terdeteksi.
+    const simCableIds = [
+      ...cableIds,
+      "ventilasi-tertutup",
+      "beban-berat-atas",
+      "stek-menumpuk",
+    ];
     const realCable = real.findings.filter((f) => simCableIds.includes(f.id));
     assert.equal(realCable.length, 1);
     assert.equal(realCable[0].sumber, "deteksi");
     assert.equal(realCable[0].keyakinan, 80);
 
-    const nonCableSim = sim.findings.filter((f) => !simCableIds.includes(f.id)).map((f) => f.id).sort();
-    const nonCableReal = real.findings.filter((f) => !simCableIds.includes(f.id)).map((f) => f.id).sort();
+    const nonCableSim = sim.findings
+      .filter((f) => !simCableIds.includes(f.id))
+      .map((f) => f.id)
+      .sort();
+    const nonCableReal = real.findings
+      .filter((f) => !simCableIds.includes(f.id))
+      .map((f) => f.id)
+      .sort();
     assert.deepEqual(nonCableReal, nonCableSim);
   });
 
-  it("nomor temuan berurutan dan urut keparahan; skor/kategori/saran ikut dihitung dari temuan gabungan", () => {
+  it("nomor temuan berurutan atas → bawah (tanpa box di akhir); saran urut keparahan; skor/kategori ikut dihitung", () => {
     const r = analyzePhoto(KEY, "rak.jpg", BACKEND);
-    assert.deepEqual(r.findings.map((f) => f.nomor), r.findings.map((_, i) => i + 1));
+    assert.deepEqual(
+      r.findings.map((f) => f.nomor),
+      r.findings.map((_, i) => i + 1),
+    );
+    const located = r.findings.filter((f) => f.bbox);
+    for (let i = 1; i < located.length; i++)
+      assert.ok(located[i - 1].bbox[1] <= located[i].bbox[1]);
+    const firstNone = r.findings.findIndex((f) => !f.bbox);
+    if (firstNone >= 0)
+      assert.ok(r.findings.slice(firstNone).every((f) => !f.bbox));
     const order = { kritis: 0, sedang: 1, ringan: 2 };
-    for (let i = 1; i < r.findings.length; i++) {
-      assert.ok(order[r.findings[i - 1].tingkat] <= order[r.findings[i].tingkat]);
+    for (let i = 1; i < r.advice.length; i++) {
+      assert.ok(order[r.advice[i - 1].tingkat] <= order[r.advice[i].tingkat]);
     }
     assert.equal(r.advice.length, r.findings.length);
-    assert.equal(r.meta.kritis + r.meta.sedang + r.meta.ringan, r.findings.length);
+    assert.equal(
+      r.meta.kritis + r.meta.sedang + r.meta.ringan,
+      r.findings.length,
+    );
     assert.ok(r.score >= 8 && r.score <= 98);
     const kabel = r.categories.find((c) => c.nama === "Kabel");
     assert.ok(kabel.temuan >= 1);
@@ -172,13 +295,28 @@ describe("analyzePhoto dengan hasil backend", () => {
   });
 
   it("temuan backend yang tidak valid diabaikan, bukan merusak hasil", () => {
-    const bad = { ...BACKEND, findings: [{ id: "x", tingkat: "aneh", bbox: [0, 0, 1, 1], langkah: [] }, { id: "y" }, null] };
+    const bad = {
+      ...BACKEND,
+      findings: [
+        { id: "x", tingkat: "aneh", bbox: [0, 0, 1, 1], langkah: [] },
+        { id: "y" },
+        null,
+      ],
+    };
     const r = analyzePhoto(KEY, "rak.jpg", bad);
-    assert.ok(r.findings.every((f) => ["kritis", "sedang", "ringan"].includes(f.tingkat)));
+    assert.ok(
+      r.findings.every((f) =>
+        ["kritis", "sedang", "ringan"].includes(f.tingkat),
+      ),
+    );
   });
 
   it("deterministik: backend yang sama → hasil sama (kecuali waktu)", () => {
-    const strip = (r) => JSON.stringify({ ...r, meta: { ...r.meta, analyzedAt: 0 } });
-    assert.equal(strip(analyzePhoto(KEY, "rak.jpg", BACKEND)), strip(analyzePhoto(KEY, "rak.jpg", BACKEND)));
+    const strip = (r) =>
+      JSON.stringify({ ...r, meta: { ...r.meta, analyzedAt: 0 } });
+    assert.equal(
+      strip(analyzePhoto(KEY, "rak.jpg", BACKEND)),
+      strip(analyzePhoto(KEY, "rak.jpg", BACKEND)),
+    );
   });
 });

@@ -1,16 +1,17 @@
 """Orkestrasi analisis rak: deteksi unit, grid U, ulangi deteksi di celah, hasilkan posisi U."""
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from ..vision.cables import CABLE_PROMPTS, CableCluster, assess_clusters, cluster_cables, link_units, to_cables
 from ..vision.detect import UNIT_CLASSES, Unit, clean_units, drop_attached_fragments, drop_nested, to_units
-from ..vision.findings import build_cable_findings
+from ..vision.findings import build_cable_findings, build_hardware_findings
 from ..common.geometry import BBox, Detection
 from ..vision.identify import classify_slots, identify_units, is_shelf_like
 from ..common.imaging import crop_region, map_box_from_crop
 from ..clients.meta_client import MAX_SIDE, MetaClient, prepare_image
-from ..vision.rack import RackGrid, build_grid, find_gaps, gap_to_slot, locate, u_uncertain
+from ..vision.rack import RackGrid, build_grid, dedupe_by_grid, find_gaps, gap_to_slot, locate, snap_to_grid, u_uncertain
+from ..vision.rectify import Rectification, estimate_rectification, map_box_back, warp_jpeg
 
 RACK_PROMPT = "server rack cabinet"
 MAX_GAP_RETRIES = 6
@@ -35,6 +36,14 @@ class RackAnalysis:
     retried_gaps: int = 0
     cables: list[CableCluster] = field(default_factory=list)
     findings: list[dict] = field(default_factory=list)
+    # bbox unit yang sudah rata dengan grid U (sejajar dengan units); dipakai respons, temuan, crop, dan 3D.
+    boxes: list[BBox] = field(default_factory=list)
+    rack_found: bool = False  # SAM menemukan kabinet rak ("server rack cabinet") pada foto
+
+
+def snapped_boxes(units: list[Unit], grid: RackGrid, uncertain: list[bool]) -> list[BBox]:
+    """bbox tiap unit di-snap ke grid U; unit dengan posisi U tak pasti dibiarkan apa adanya."""
+    return [u.bbox if unc else snap_to_grid(u.bbox, grid) for u, unc in zip(units, uncertain)]
 
 
 def _best_rack_box(dets: list[Detection]) -> BBox | None:
@@ -74,9 +83,78 @@ async def analyze_rack(
     *,
     identify: bool = True,
     knowledge: list[str] | None = None,
+    rectify: bool = False,
 ) -> RackAnalysis:
+    """Analisis rak. `rectify=True`: foto miring diluruskan dulu (perspective rectification), dianalisis pada
+    gambar lurus, lalu semua koordinat dipetakan kembali ke foto asli. Bila rak sudah lurus, atau hasil gambar
+    lurus tidak lebih baik, jalur biasa dipakai.
+    """
     max_side = getattr(getattr(client, "settings", None), "max_image_side", MAX_SIDE)
     prepared = prepare_image(image_bytes, max_side)
+    if rectify:
+        rect, found = await _plan_rectification(client, prepared)
+        if rect is not None:
+            straight = (warp_jpeg(prepared[0], rect), *rect.size)
+            result = await _analyze(client, straight, rack_u, identify, knowledge)
+            # Dipakai hanya bila gambar lurus tidak menemukan lebih sedikit unit daripada foto asli.
+            if result.grid is not None and len(result.units) >= found:
+                return map_analysis_back(result, rect)
+    return await _analyze(client, prepared, rack_u, identify, knowledge)
+
+
+def map_analysis_back(res: RackAnalysis, rect: Rectification) -> RackAnalysis:
+    """Petakan semua koordinat hasil analisis pada gambar lurus kembali ke foto asli."""
+    mb = lambda b: map_box_back(tuple(b), rect)  # noqa: E731
+    rb = lambda b: [round(v, 4) for v in mb(b)]  # noqa: E731
+    units = [replace(u, bbox=mb(u.bbox), mask=None) for u in res.units]
+    clusters = [
+        replace(c, bbox=mb(c.bbox), cables=[replace(k, bbox=mb(k.bbox)) for k in c.cables]) for c in res.cables
+    ]
+    findings = [{**f, "bbox": rb(f["bbox"])} if f.get("bbox") else dict(f) for f in res.findings]
+    slots = [{**s, "bbox": rb(s["bbox"])} for s in res.empty_slots]
+    grid = res.grid
+    if grid is not None:
+        gx, gy, gw, gh = mb((grid.x0, grid.top, grid.x1 - grid.x0, grid.bottom - grid.top))
+        grid = RackGrid(
+            top=gy,
+            bottom=gy + gh,
+            u_h=gh / grid.total_u,
+            total_u=grid.total_u,
+            ref_width=gw,
+            x0=gx,
+            x1=gx + gw,
+        )
+    return replace(
+        res,
+        width=rect.source_width,
+        height=rect.source_height,
+        units=units,
+        grid=grid,
+        cables=clusters,
+        findings=findings,
+        empty_slots=slots,
+        boxes=[mb(b) for b in res.boxes],
+    )
+
+
+async def _plan_rectification(
+    client: MetaClient, prepared: tuple[bytes, int, int]
+) -> tuple[Rectification | None, int]:
+    """(matriks pelurus atau None, jumlah unit di foto asli). Deteksi unit cepat; hasil SAM di-cache sehingga
+    jalur biasa tidak membayar dua kali."""
+    jpeg, width, height = prepared
+    by_prompt = await client.segment_many(jpeg, _prompts(), prepared=prepared)
+    units = clean_units(to_units(by_prompt))
+    return estimate_rectification([u.bbox for u in units], width, height), len(units)
+
+
+async def _analyze(
+    client: MetaClient,
+    prepared: tuple[bytes, int, int],
+    rack_u: int | None,
+    identify: bool,
+    knowledge: list[str] | None,
+) -> RackAnalysis:
     jpeg, width, height = prepared
 
     by_prompt = await client.segment_many(
@@ -89,7 +167,7 @@ async def analyze_rack(
 
     grid = build_grid([u.bbox for u in units], width, height, rack_bbox=rack_box, rack_u=rack_u)
     if grid is None:
-        return RackAnalysis(width, height, units, None, cables=clusters)
+        return RackAnalysis(width, height, units, None, cables=clusters, rack_found=rack_box is not None)
 
     # Pass kedua: ulangi deteksi pada crop di tiap celah supaya unit kecil/redup tidak terlewat.
     gaps = find_gaps([u.bbox for u in units], grid)
@@ -107,11 +185,15 @@ async def analyze_rack(
         units = drop_nested(units, protect=is_shelf_like)
         units = drop_attached_fragments(units)
 
+    # Dua kotak pada U yang sama dan lebar yang saling menutupi = satu perangkat: gabungkan sebelum grid final.
+    units = dedupe_by_grid(units, grid)
+
     # Hitung ulang grid dengan unit baru (lebar referensi bisa berubah), lalu celah yang tersisa = slot kosong.
     grid = build_grid([u.bbox for u in units], width, height, rack_bbox=rack_box, rack_u=rack_u) or grid
     remaining = find_gaps([u.bbox for u in units], grid)
     positions = [locate(u.bbox, grid) for u in units]
     uncertain = [u_uncertain(u.bbox, grid) for u in units]
+    boxes = snapped_boxes(units, grid, uncertain)
 
     # Kabel: hubungkan ke unit, nilai kerapian/label lewat Muse, lalu turunkan temuan.
     link_units(clusters, units)
@@ -133,5 +215,10 @@ async def analyze_rack(
         empty_slots=empty_slots,
         retried_gaps=retried,
         cables=clusters,
-        findings=build_cable_findings(clusters, units, positions),
+        findings=[
+            *build_cable_findings(clusters, units, positions, boxes),
+            *build_hardware_findings(units, positions, boxes, uncertain, grid.total_u, empty_slots),
+        ],
+        boxes=boxes,
+        rack_found=rack_box is not None,
     )

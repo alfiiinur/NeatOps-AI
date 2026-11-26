@@ -675,4 +675,13 @@ export const RACK = {
   "Hidupkan berurutan": "Power on in order",
   "Nyalakan stop kontak lebih dulu, lalu PC atau laptop, lalu monitor dan perangkat lain. Pastikan semua menyala normal.":
     "Turn on the power strip first, then the PC or laptop, then the monitor and other devices. Make sure everything powers up normally.",
+  // ── Tombol aksi pada saran ──
+  "Tambah PDU": "Add PDU",
+  "Tambah UPS": "Add UPS",
+  "Tambah patch panel": "Add patch panel",
+  "Tambah ODF": "Add ODF",
+  "Lihat jalur kabel": "View cable routes",
+  "Susun ulang otomatis": "Re-plan automatically",
+  "Susunan AI": "AI layout",
+  "Ubah hardware": "Edit hardware",
 };

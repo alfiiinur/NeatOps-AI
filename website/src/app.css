@@ -173,17 +173,6 @@ body {
   color: var(--amber);
 }
 
-.badge-sim {
-  font-family: var(--mono);
-  font-size: 11px;
-  letter-spacing: 1px;
-  color: var(--amber);
-  border: 1px dashed var(--amber-dim);
-  border-radius: 4px;
-  padding: 2px 8px;
-  white-space: nowrap;
-}
-
 .topbar-right {
   margin-left: auto;
   display: flex;
@@ -1324,9 +1313,6 @@ canvas {
   }
   .brand-name {
     font-size: 16px;
-  }
-  .badge-sim {
-    display: none;
   }
   .nav-item {
     padding: 7px 12px;

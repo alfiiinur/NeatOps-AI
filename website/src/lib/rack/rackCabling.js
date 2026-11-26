@@ -569,7 +569,7 @@ export function planRackCables(slots, opts = {}) {
         "mains",
         u,
         inp,
-        { exit: "bottom", label: "stop kontak / panel listrik" },
+        { exit: "bottom", label: opts.powerTarget ?? "stop kontak / panel listrik" },
         null,
         "Input listrik UPS",
       );
@@ -584,7 +584,7 @@ export function planRackCables(slots, opts = {}) {
         "mains",
         p,
         inp,
-        { exit: "bottom", label: "stop kontak / panel listrik" },
+        { exit: "bottom", label: opts.powerTarget ?? "stop kontak / panel listrik" },
         null,
         "Input listrik PDU (tanpa UPS)",
       );
@@ -622,7 +622,7 @@ export function planRackCables(slots, opts = {}) {
           "mains",
           d,
           ps,
-          { exit: "bottom", label: "stop kontak dinding" },
+          { exit: "bottom", label: opts.powerTarget ?? "stop kontak dinding" },
           null,
           "Daya langsung dari stop kontak (tanpa PDU/UPS)",
         );
