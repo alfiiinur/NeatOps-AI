@@ -49,3 +49,22 @@ describe("buildTopology dari rak", () => {
     assert.ok(t.edges.every((e) => ids.has(e.from) && ids.has(e.to)));
   });
 });
+
+import { test as _t } from "node:test";
+import _assert from "node:assert/strict";
+_t("topologyLayout groupBy: kotak rak tidak bertumpuk & memuat node-nya", () => {
+  const nodes = [
+    { id: "a", nama: "A", role: "router", grp: "Rak 1" },
+    { id: "b", nama: "B", role: "switch", grp: "Rak 1" },
+    { id: "c", nama: "C", role: "switch", grp: "Rak 2" },
+  ];
+  const edges = [{ id: "e1", from: "a", to: "b" }, { id: "e2", from: "b", to: "c" }];
+  const L = topologyLayout(nodes, edges, { groupBy: true });
+  _assert.equal(L.groups.length, 2);
+  const [g1, g2] = L.groups;
+  _assert.ok(g1.x + g1.w <= g2.x, "rak tidak boleh bertumpuk");
+  for (const n of L.nodes) {
+    const g = L.groups.find((x) => x.name === n.grp);
+    _assert.ok(n.x - 56 >= g.x && n.x + 56 <= g.x + g.w && n.y >= g.y && n.y <= g.y + g.h);
+  }
+});

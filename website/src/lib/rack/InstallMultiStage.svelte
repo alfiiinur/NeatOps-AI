@@ -23,9 +23,21 @@
 </script>
 
 {#if mode === "3d" && racks[cur]}
-  {#key racks[cur].id}
-    <InstallStage3D slots={racks[cur].slots} routes={slices[cur].routes} view={slices[cur].view} {reduced} {player} {onFail} />
-  {/key}
+  <!-- Semua rak berjajar dalam satu scene; saat rak selesai kamera bergeser ke rak berikutnya. -->
+  <InstallStage3D
+    slots={racks[0].slots}
+    routes={slices[0].routes}
+    view={slices[0].view}
+    name={racks[0].nama}
+    rackId={racks[0].id}
+    neighbors={racks.slice(1)}
+    nbViews={slices.slice(1).map((s) => s.view)}
+    focusRack={cur}
+    focusKey={slices[cur].view.active[0] ?? racks[cur].slots.find((s) => !s.auto)?.key ?? null}
+    {reduced}
+    {player}
+    {onFail}
+  />
   <span class="ms-badge">{racks[cur].nama} · {cur + 1}/{n}</span>
 {:else}
   <div class="ms" role="group" aria-label="Animasi pemasangan {n} rak">

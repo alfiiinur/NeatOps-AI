@@ -50,7 +50,6 @@
       <div class="brand-mark" aria-hidden="true">N</div>
       <div class="brand-name">NeatOps <span>AI</span></div>
     </a>
-    <span class="badge-sim">{t("nav.badge")}</span>
   </div>
 
   <nav class="navbar-nav" aria-label={t("nav.aria")}>

@@ -2,7 +2,9 @@
   import { t, tx } from "../core/i18n.svelte.js";
   import Rack3DView from "./Rack3DView.svelte";
 
-  let { photo, result, tab, onTab, onHighlight, onDownload } = $props();
+  let { photo, result, noRack = null, tab, onTab, onHighlight, onDownload } = $props();
+
+  const sim = $derived(result?.meta?.deteksi === "simulasi");
 
   let expanded = $state(null);
   let ratio = $state(1.5); // lebar/tinggi foto asli
@@ -20,6 +22,16 @@
     const py = h < 1 ? (y / (1 - h)) * 100 : 0;
     const ar = (w * ratio) / h;
     return `aspect-ratio:${ar}; width:min(calc(100% - 26px), ${(180 * ar).toFixed(0)}px); background-image:url(${photo.dataUrl}); background-size:${100 / w}% ${100 / h}%; background-position:${px}% ${py}%;`;
+  }
+
+  // "H2, H3": hardware yang terkait temuan (lewat unit_ids), sama dengan nomor di tab Hardware.
+  function relatedUnits(f) {
+    const hw = result?.hardware ?? [];
+    return (f.unit_ids ?? [])
+      .map((id) => hw.findIndex((h) => h.id === id))
+      .filter((i) => i >= 0)
+      .map((i) => "H" + (i + 1))
+      .join(", ");
   }
 
   const sevLabel = (k) => t("res.sev." + k);
@@ -52,6 +64,20 @@
 
   let compare = $state(50);
 
+  // Baris denah: tinggi proporsional ke jumlah U (ikut hardware yang terdeteksi), muat dalam 500px.
+  const tidyRows = $derived.by(() => {
+    const units = result?.tidy?.units ?? [];
+    const totalU = units.reduce((a, u) => a + (u.unitHeight ?? 1), 0) || 1;
+    const per = Math.min(41, 484 / totalU);
+    let y = 8;
+    return units.map((u) => {
+      const h = Math.max(14, (u.unitHeight ?? 1) * per - 4);
+      const row = { ...u, y, h };
+      y += (u.unitHeight ?? 1) * per;
+      return row;
+    });
+  });
+
   // Overlay memakai viewBox sesuai rasio foto agar lingkaran tidak gepeng.
   const VW = 1000;
   const vh = $derived(VW / ratio);
@@ -69,7 +95,20 @@
 <div class="panel">
   <div class="panel-head"><h2>{t("res.title")}</h2></div>
 
-  {#if !result}
+  {#if !result && noRack}
+    <div class="empty-results no-rack" role="alert">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9" /><path d="M12 7v6M12 16.5v.5" />
+      </svg>
+      <h3>{t("res.noRackTitle")}</h3>
+      <p>{t("res.noRackBody")}</p>
+      <ul class="no-rack-tips">
+        <li>{t("res.noRackTip1")}</li>
+        <li>{t("res.noRackTip2")}</li>
+        <li>{t("res.noRackTip3")}</li>
+      </ul>
+    </div>
+  {:else if !result}
     <div class="empty-results">
       <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
         <rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" />
@@ -126,6 +165,7 @@
           {/each}
         </div>
       {:else if tab === "temuan"}
+        {#if sim}<p class="hw-empty">{t("res.simNoBoxes")}</p>{/if}
         {#each result.findings as f}
           <div class="finding" data-finding={f.nomor}>
             <div
@@ -140,13 +180,17 @@
             >
               <span class="finding-num">#{f.nomor}</span>
               <div class="finding-main">
-                <div class="finding-cat">{tx(f.kategori)} · {t("res.confidence", { n: f.keyakinan })}</div>
+                <div class="finding-cat">{tx(f.kategori)} · {t("res.confidence", { n: f.keyakinan })}{#if relatedUnits(f)} · {t("res.relatedUnits")} {relatedUnits(f)}{/if}</div>
                 <h4>{tx(f.judul)}</h4>
                 <p>{tx(f.deskripsi)}</p>
               </div>
               <span class="sev sev-{f.tingkat}">{sevLabel(f.tingkat)}</span>
             </div>
-            <div class="finding-crop" style={cropStyle(f)} role="img" aria-label={t("res.cropAria", { n: f.nomor })}></div>
+            {#if f.bbox && !sim}
+              <div class="finding-crop" style={cropStyle(f)} role="img" aria-label={t("res.cropAria", { n: f.nomor })}></div>
+            {:else if !f.bbox}
+              <div class="finding-ref">{t("res.noLocation")}</div>
+            {/if}
             {#if expanded === f.nomor}
               <div class="finding-detail">
                 <b>{t("res.fixSteps")}</b>
@@ -163,6 +207,7 @@
         {#if !hwList.length}
           <p class="hw-empty">{t("res.hwEmpty")}</p>
         {:else}
+          {#if sim}<p class="hw-empty">{t("res.simNoBoxes")}</p>{/if}
           <p class="hw-summary">{t("res.hwSummary", { n: hwList.length, u: hwList.reduce((a, h) => a + h.jumlah, 0) })}</p>
           {#each hwList as h, i}
             <div
@@ -172,7 +217,9 @@
               onmouseenter={() => onHighlight({ nomor: "H" + (i + 1) })}
               onmouseleave={() => onHighlight(null)}
             >
-              <div class="hw-photo" style={cropStyle(h)} role="img" aria-label={t("res.hwCropAria", { nama: tx(h.nama) })}></div>
+              {#if !sim}
+                <div class="hw-photo" style={cropStyle(h)} role="img" aria-label={t("res.hwCropAria", { nama: tx(h.nama) })}></div>
+              {/if}
               <div class="hw-info">
                 <h4><span class="hw-num">H{i + 1}</span> {tx(h.nama)} <span class="hw-qty">×{h.jumlah}</span></h4>
                 <div class="hw-rows">
@@ -195,7 +242,7 @@
       {:else if tab === "visual"}
         {#snippet overlay()}
           <svg class="after-overlay" viewBox="0 0 {VW} {vh}" preserveAspectRatio="xMidYMid meet" aria-hidden="true">
-            {#each result.tidy.routes as r}
+            {#each sim ? [] : result.tidy.routes as r}
               <path d={routePath(r)} fill="none" stroke="rgba(11,14,19,0.65)" stroke-width="6" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
               <path d={routePath(r)} fill="none" stroke={r.warna} stroke-width="3" stroke-dasharray="7 5" stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke" />
               <circle cx={r.dari[0] * VW} cy={r.dari[1] * vh} r="11" fill={r.warna} stroke="#fff" stroke-width="3" />
@@ -236,14 +283,13 @@
           <div class="tidy-box">
             <h4>{t("res.floorplan")}</h4>
             <svg class="schematic" viewBox="0 0 300 500" role="img" aria-label={t("res.floorplanAria")}>
-              {#each result.tidy.units as u, i}
-                {@const y = 8 + i * 41}
-                <rect x="44" y={y} width="248" height="37" rx="3" fill={unitColor[u.tipe]} stroke={unitEdge[u.tipe]} stroke-width="1" />
-                <text x="8" y={y + 23} fill="var(--faint)" font-size="11" font-family="monospace">{u.u}</text>
-                <text x="54" y={y + 23} fill="#2b2a25" font-size="11.5">{tx(u.isi)}</text>
+              {#each tidyRows as u}
+                <rect x="44" y={u.y} width="248" height={u.h} rx="3" fill={unitColor[u.tipe]} stroke={unitEdge[u.tipe]} stroke-width="1" />
+                <text x="8" y={u.y + u.h / 2 + 4} fill="var(--faint)" font-size="11" font-family="monospace">{u.u}</text>
+                <text x="54" y={u.y + u.h / 2 + 4} fill="#2b2a25" font-size="11.5">{tx(u.isi)}</text>
                 {#if u.tipe === "server" || u.tipe === "data"}
-                  <circle cx="272" cy={y + 18} r="3" fill="#2fbf71" />
-                  <circle cx="281" cy={y + 18} r="3" fill="#2fbf71" opacity="0.55" />
+                  <circle cx="272" cy={u.y + u.h / 2} r="3" fill="#2fbf71" />
+                  <circle cx="281" cy={u.y + u.h / 2} r="3" fill="#2fbf71" opacity="0.55" />
                 {/if}
               {/each}
             </svg>
@@ -258,7 +304,7 @@
             <h4 style="margin-top:14px">{t("res.idealRoutes")}</h4>
             <ol>
               {#each result.tidy.routes as r}
-                <li><span style="color:{r.warna}">━</span> {tx(r.label)}</li>
+                <li><span style="color:{r.warna}">━</span> {tx(r.label)}{#if r.unit} · {tx(r.unit)}{/if}</li>
               {/each}
             </ol>
           </div>

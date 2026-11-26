@@ -86,3 +86,53 @@ def test_analyze_reports_u_estimated_and_u_uncertain_fields():
 
     fixed = make_client().post("/analyze?rack_u=12", files=files).json()
     assert fixed["rack"]["u_estimated"] is False
+
+
+def test_analyze_sends_rack_geometry_ids_and_snapped_boxes():
+    body = make_client().post("/analyze", files={"photo": ("rak.jpg", jpeg_bytes(), "image/jpeg")}).json()
+    rack = body["rack"]
+    for key in ("u_h", "top", "bottom", "x0", "x1"):
+        assert isinstance(rack[key], float), key
+    assert rack["bottom"] > rack["top"] and rack["x1"] > rack["x0"]
+    assert [h["id"] for h in body["hardware"]] == ["hw-1", "hw-2"]
+    for h in body["hardware"]:
+        assert h["bbox_source"] == "detected"
+        x, y, w, hh = h["bbox"]
+        assert rack["x0"] - 1e-3 <= x and x + w <= rack["x1"] + 1e-3
+        assert rack["top"] - 1e-3 <= y and y + hh <= rack["bottom"] + 1e-3
+        if not h["u_uncertain"]:  # bbox rata dengan garis U
+            assert (y - rack["top"]) / rack["u_h"] == __import__("pytest").approx(
+                round((y - rack["top"]) / rack["u_h"]), abs=0.05
+            )
+
+
+class EmptyMeta(FakeMeta):
+    """Foto tanpa rak (mis. orang/ruangan): SAM tidak menemukan apa pun."""
+
+    async def segment_many(self, image_bytes, concepts, prepared=None):
+        return {c: [] for c in concepts}
+
+
+class GenericOnlyMeta(FakeMeta):
+    """Hanya tebakan generik (layar/baju) dan tidak ada kabinet rak."""
+
+    async def segment_many(self, image_bytes, concepts, prepared=None):
+        found = {
+            "equipment": [Detection("equipment", (0.2, 0.2, 0.5, 0.2), 0.8), Detection("equipment", (0.2, 0.5, 0.5, 0.2), 0.8)]
+        }
+        return {c: found.get(c, []) for c in concepts}
+
+
+def test_analyze_flags_photo_without_rack():
+    body = make_client(EmptyMeta()).post("/analyze", files={"photo": ("orang.jpg", jpeg_bytes(), "image/jpeg")}).json()
+    assert body["rack_detected"] is False and body["hardware"] == []
+
+
+def test_analyze_flags_generic_only_detections_without_rack_cabinet():
+    body = make_client(GenericOnlyMeta()).post("/analyze", files={"photo": ("ruang.jpg", jpeg_bytes(), "image/jpeg")}).json()
+    assert body["rack_detected"] is False
+
+
+def test_analyze_flags_real_rack_as_detected():
+    body = make_client().post("/analyze", files={"photo": ("rak.jpg", jpeg_bytes(), "image/jpeg")}).json()
+    assert body["rack_detected"] is True

@@ -25,6 +25,13 @@
   let copied = $state(false);
   let showConfig = $state(false);
 
+  // Penjelasan singkat tiap mode port (ditampilkan sebagai badge di bawah pilihan mode).
+  const MODE_HELP = {
+    access: { judul: "Access", teks: "Port untuk satu perangkat ujung (PC, CCTV, AP, printer). Hanya membawa 1 VLAN tanpa tag." },
+    trunk: { judul: "Trunk", teks: "Port penghubung antar switch/router/firewall. Membawa banyak VLAN sekaligus (bertag); Native = VLAN tanpa tag." },
+    none: { judul: "Kosongkan", teks: "Menghapus pengaturan VLAN pada port terpilih. Port kembali ke bawaan perangkat (belum diatur)." },
+  };
+
   // Ganti perangkat → kosongkan pilihan.
   let lastDev = "";
   $effect(() => {
@@ -192,6 +199,10 @@
       {/if}
       <button onclick={apply} disabled={!selected.size || (mode === "access" && vlan == null)}>Terapkan ke {selected.size} port</button>
     </div>
+    <p class="dc-mode dc-mode-{mode}" role="note">
+      <b>{MODE_HELP[mode].judul}</b>
+      <span>{MODE_HELP[mode].teks}</span>
+    </p>
     {#if !vids.length}<p class="dc-hint">Buat VLAN dulu di tab "VLAN & subnet".</p>{/if}
   </div>
 
@@ -237,6 +248,10 @@
   .dc-seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
   .dc-seg button { border: none; border-radius: 0; background: transparent; padding: 5px 12px; font-size: 12.5px; color: var(--muted); }
   .dc-seg button.active { background: var(--lime); color: var(--on-lime, #243006); font-weight: 600; }
+  .dc-mode { display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--line-soft); background: var(--bg-soft); font-size: 12px; line-height: 1.4; color: var(--muted); }
+  .dc-mode b { font-size: 12px; color: var(--text); }
+  .dc-mode-access { border-color: var(--lime-edge); }
+  .dc-mode-trunk { border-color: #c98a0b; background: rgba(201, 138, 11, 0.08); }
   .dc-allowed { display: flex; gap: 8px; flex-wrap: wrap; }
   .dc-allowed label { display: flex; align-items: center; gap: 3px; font-family: var(--mono); font-size: 12px; }
   .dc-native { display: flex; align-items: center; gap: 4px; color: var(--muted); }

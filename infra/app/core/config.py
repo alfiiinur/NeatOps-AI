@@ -12,6 +12,11 @@ class Settings(BaseSettings):
     model_api_key: str = ""
     model_api_base_url: str = "https://api.meta.ai/v1"
     identify_model: str = "muse-spark-1.3"  # bisa diganti "muse-ember-1.0" bila ingin lebih hemat
+    # Provider chat asisten (OpenAI-compatible). Aktif bila KEY, BASE_URL, dan CHAT_MODEL terisi;
+    # bila kosong chat memakai Model API di atas.
+    ml_ai_api_key: str = ""
+    ml_ai_base_url: str = ""
+    ml_ai_chat_model: str = ""
     cors_origins: list[str] = ["http://localhost:5173", "http://127.0.0.1:5173"]
     knowledge_dir: Path = INFRA_DIR / "knowledge" / "docs"
 
@@ -22,6 +27,9 @@ class Settings(BaseSettings):
     # Ukuran input yang memengaruhi biaya token. Turunkan bila ingin lebih hemat, naikkan bila akurasi turun.
     max_image_side: int = 1536  # sisi terpanjang gambar yang dikirim ke SAM
     crop_min_width: int = 512  # lebar minimum crop yang dikirim ke Muse
+    # Luruskan foto rak yang miring (perspective rectification) sebelum deteksi. Memakai panggilan SAM tambahan
+    # hanya untuk foto yang miring; aktifkan dengan RECTIFY=true di .env.
+    rectify: bool = False
 
     model_config = SettingsConfigDict(
         env_file=ROOT_DIR / ".env", env_file_encoding="utf-8", extra="ignore"

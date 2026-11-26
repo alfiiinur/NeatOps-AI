@@ -10,7 +10,10 @@ function stable(r) {
 
 describe("analyzePhoto", () => {
   it("deterministik untuk kunci yang sama", () => {
-    assert.deepEqual(stable(analyzePhoto(KEY, "rak.jpg")), stable(analyzePhoto(KEY, "rak.jpg")));
+    assert.deepEqual(
+      stable(analyzePhoto(KEY, "rak.jpg")),
+      stable(analyzePhoto(KEY, "rak.jpg")),
+    );
   });
 
   it("keluaran lama tetap utuh (skor + temuan valid)", () => {
@@ -18,7 +21,9 @@ describe("analyzePhoto", () => {
     assert.ok(r.score >= 8 && r.score <= 98);
     assert.ok(r.findings.length >= 4 && r.findings.length <= 7);
     for (const f of r.findings) {
-      assert.ok(f.nomor >= 1 && f.judul && f.bbox.length === 4);
+      assert.ok(f.nomor >= 1 && f.judul);
+      assert.ok(f.bbox === null || f.bbox.length === 4);
+      assert.equal(f.bbox === null, f.anchor === "none");
       assert.ok(f.keyakinan >= 50 && f.keyakinan <= 99);
     }
     assert.ok(r.categories.length > 0 && r.advice.length > 0 && r.tidy);
@@ -39,10 +44,14 @@ describe("deteksi hardware", () => {
       assert.ok(h.merek && typeof h.merek === "string", "merek wajib ada");
       assert.ok(h.jenis && typeof h.jenis === "string", "jenis wajib ada");
       assert.ok(h.tipe && typeof h.tipe === "string", "tipe wajib ada");
-      assert.ok(Number.isInteger(h.jumlah) && h.jumlah >= 1 && h.jumlah <= 3, "jumlah 1–3");
+      assert.ok(
+        Number.isInteger(h.jumlah) && h.jumlah >= 1 && h.jumlah <= 3,
+        "jumlah 1–3",
+      );
       assert.equal(h.bbox.length, 4);
       const [x, y, w, hgt] = h.bbox;
-      for (const v of h.bbox) assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, "bbox 0–1");
+      for (const v of h.bbox)
+        assert.ok(Number.isFinite(v) && v >= 0 && v <= 1, "bbox 0–1");
       assert.ok(w > 0 && hgt > 0, "bbox berdimensi");
       assert.ok(x + w <= 1.02 && y + hgt <= 1.02, "bbox dalam foto");
       assert.ok(h.keyakinan >= 50 && h.keyakinan <= 99, "keyakinan 50–99");

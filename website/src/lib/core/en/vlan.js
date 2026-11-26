@@ -192,4 +192,10 @@ export const VLAN = {
   "Ujung lain kabel belum diatur VLAN-nya":
     "The other cable end has no VLAN set",
   "Trunk belum dikabel": "Trunk not cabled",
+  "Port untuk satu perangkat ujung (PC, CCTV, AP, printer). Hanya membawa 1 VLAN tanpa tag.":
+    "Port for a single end device (PC, CCTV, AP, printer). Carries one untagged VLAN.",
+  "Port penghubung antar switch/router/firewall. Membawa banyak VLAN sekaligus (bertag); Native = VLAN tanpa tag.":
+    "Port linking switches/routers/firewalls. Carries many tagged VLANs at once; Native = the untagged VLAN.",
+  "Menghapus pengaturan VLAN pada port terpilih. Port kembali ke bawaan perangkat (belum diatur).":
+    "Clears the VLAN setting on the selected ports. They return to the device default (not configured).",
 };

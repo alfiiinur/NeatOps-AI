@@ -1,6 +1,6 @@
 <script>
-  import { onMount, untrack } from "svelte";
-  import { createRackScene } from "./rackThreeScene.js";
+  import { onMount, untrack, tick } from "svelte";
+  import { createRackScene, ROOM_THEMES, DEFAULT_ROOM_THEME } from "./rackThreeScene.js";
   import RackIso from "./RackIso.svelte";
   import ArLauncher from "./ArLauncher.svelte";
   import { dataPortsOf, suggestKind, validateManualCable, newCableId } from "./cabling/manualCabling.js";
@@ -9,8 +9,10 @@
   import TopologyMiniMap from "./topology/TopologyMiniMap.svelte";
   import TopologyEditor from "./topology/TopologyEditor.svelte";
   import { keyOfNode } from "./topology/topologyEdit.js";
+  import { buildPowerTopology } from "./power/powerTopology.js";
 
-  // neighbors: rak lain di ruangan yang sama [{ nama, slots }], digambar berjajar di kanan rak ini.
+  // neighbors: rak lain di ruangan yang sama [{ id, nama, slots }], digambar berjajar di kanan rak ini.
+  // mainId + interLinks: id rak ini dan kabel antar rak (buildInterRackLinks) yang digambar lewat cable tray di atas.
   // cabling: { dataCabling, manualCables, reserved } dari rak; onAddCable(cable) aktifkan mode "Pasang kabel".
   let {
     slots,
@@ -20,12 +22,17 @@
     compact = false,
     neighbors = [],
     name = null,
+    mainId = null,
+    interLinks = [],
     cabling = null,
     onAddCable = null,
     topoPos = {},
     onTopoPos = null,
     onCablingChange = null,
     topoOverride = null,
+    powerView = null,
+    powerTopoOverride = null,
+    onPowerOpen = null,
   } = $props();
 
   // ── Topologi 2D (mini-map + editor) ──
@@ -33,6 +40,11 @@
   const topo = $derived(
     topoOverride ??
       buildTopology([{ id: "r", nama: name ?? "Rak", slots, cables, endDevices: cabling?.endDevices ?? [] }]),
+  );
+  // Topologi rantai daya (mode "Daya" di mini-map): satu rak dari kabel scene, atau semua rak dari RackBuilder.
+  const powerTopo = $derived(
+    powerTopoOverride ??
+      (powerView ? buildPowerTopology([{ id: "r", nama: name ?? "Rak", slots, cables }], powerView) : null),
   );
   const canEditTopo = $derived(!readonly && !!onCablingChange && !topoOverride);
   let editorOpen = $state(false);
@@ -60,7 +72,10 @@
     pickOn = !pickOn;
     pickA = null;
     pickMsg = pickOn ? "Klik port pertama (titik hijau = bebas)." : "";
-    if (pickOn) select(null);
+    if (pickOn) {
+      select(null);
+      menuOpen = false;
+    }
   }
   function onPortPick(p) {
     if (!pickA) {
@@ -112,6 +127,12 @@
     const a = pickA;
     untrack(() => scene?.setPortPick(on, a));
   });
+  // Rantai daya (panel, AVR, PLN, grounding di belakang rak).
+  $effect(() => {
+    const pv = powerView;
+    untrack(() => scene?.setPower(pv));
+  });
+
   $effect(() => {
     const c = cabling;
     untrack(() => {
@@ -208,16 +229,31 @@
   function onFsChange() {
     if (!pseudo) full = document.fullscreenElement === viewportEl;
   }
-  // Mode compact: kontrol disembunyikan di balik tombol hamburger supaya tidak menumpuk.
+  // ── Tema ruangan 3D (pilihan terakhir diingat) ──
+  const ROOM_KEY = "neatops.rack3d.room";
+  function loadRoomTheme() {
+    try {
+      const v = localStorage.getItem(ROOM_KEY);
+      return ROOM_THEMES.some((t) => t.id === v) ? v : DEFAULT_ROOM_THEME;
+    } catch {
+      return DEFAULT_ROOM_THEME;
+    }
+  }
+  let roomTheme = $state(loadRoomTheme());
+  const roomHint = $derived(ROOM_THEMES.find((t) => t.id === roomTheme)?.hint ?? "");
+  // Menu kontrol 3D (tombol hamburger kiri bawah): terbuka saat diklik, tertutup saat klik di luar / Esc.
   let menuOpen = $state(false);
+  function onWinDown(e) {
+    if (menuOpen && !e.target?.closest?.(".rt-bar, .rt-burger")) menuOpen = false;
+  }
 
   const selected = $derived(slots.find((s) => s.key === selectedKey) ?? null);
   const selIdx = $derived(selected ? slots.findIndex((s) => s.key === selectedKey) : -1);
   const unitCount = $derived(slots.filter((s) => !s.auto).length);
 
   let neighborSig = "";
-  const neighborSigOf = (list, nm) =>
-    JSON.stringify([nm, (list ?? []).map((r) => [r.nama, r.slots.map((s) => s.key + ":" + s.unitHeight)])]);
+  const neighborSigOf = (list, nm, id) =>
+    JSON.stringify([nm, id, (list ?? []).map((r) => [r.id, r.nama, r.slots.map((s) => s.key + ":" + s.unitHeight)])]);
 
   function syncBadges() {
     if (!scene || !viewportEl) return;
@@ -234,7 +270,7 @@
   function goView(name) {
     view = name;
     scene?.setView(name);
-    if (compact) menuOpen = false;
+    menuOpen = false;
   }
 
   function resetAll() {
@@ -242,6 +278,7 @@
     pickCable(null);
     view = "perspektif";
     scene?.reset();
+    menuOpen = false;
   }
 
   onMount(() => {
@@ -250,7 +287,12 @@
         slots,
         neighbors,
         name,
+        rackId: mainId,
+        interLinks,
         cabling,
+        powerView,
+        roomTheme,
+        onPowerOpen: () => onPowerOpen?.(),
         onPortPick: (p) => onPortPick(p),
         onSelect: (key) => {
           selectedKey = key;
@@ -273,7 +315,7 @@
         },
         reducedMotion: window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ?? false,
       });
-      neighborSig = neighborSigOf(neighbors, name);
+      neighborSig = neighborSigOf(neighbors, name, mainId);
       syncBadges();
     } catch (e) {
       console.warn("WebGL tidak tersedia, memakai tampilan 3D SVG.", e);
@@ -297,13 +339,22 @@
   $effect(() => {
     const list = neighbors;
     const nm = name;
-    const sig = neighborSigOf(list, nm);
+    const id = mainId;
+    const sig = neighborSigOf(list, nm, id);
     untrack(() => {
       if (!scene || sig === neighborSig) return;
       neighborSig = sig;
-      scene.setNeighbors(list, nm);
+      scene.setNeighbors(list, nm, id);
       scene.setView(view ?? "perspektif");
+      // Label U rak tetangga dirender Svelte setelah efek ini: daftarkan ulang ke scene sesudah DOM diperbarui.
+      tick().then(syncBadges);
     });
+  });
+
+  // Kabel antar rak berubah (mode auto/manual, port diganti): gambar ulang jalurnya di atas rak.
+  $effect(() => {
+    const links = interLinks;
+    untrack(() => scene?.setInterLinks(links));
   });
 
   $effect(() => {
@@ -340,6 +391,19 @@
     untrack(() => scene?.setXray(v));
   });
 
+  // Tema ruangan: terapkan ke scene & ingat pilihan untuk kunjungan berikutnya.
+  $effect(() => {
+    const id = roomTheme;
+    untrack(() => {
+      scene?.setRoomTheme(id);
+      try {
+        localStorage.setItem(ROOM_KEY, id);
+      } catch {
+        /* localStorage bisa diblokir (mode privat) — abaikan. */
+      }
+    });
+  });
+
   $effect(() => {
     const v = auditOn;
     untrack(() => {
@@ -350,7 +414,7 @@
   });
 </script>
 
-<svelte:window onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; if (pickOn) { if (pickA) { pickA = null; pickMsg = "Dibatalkan. Klik port pertama."; } else togglePick(); } else if (full && pseudo) toggleFull(); } }} />
+<svelte:window onpointerdown={onWinDown} onkeydown={(e) => { if (e.key === "Escape") { menuOpen = false; if (pickOn) { if (pickA) { pickA = null; pickMsg = "Dibatalkan. Klik port pertama."; } else togglePick(); } else if (full && pseudo) toggleFull(); } }} />
 <svelte:document onfullscreenchange={onFsChange} />
 
 {#if !webglOK}
@@ -390,12 +454,23 @@
         {/each}
       </ol>
     </aside>
-    <div class="rt-view" class:rt-pseudo={full && pseudo} bind:this={viewportEl} onpointermove={onViewMove} role="presentation">
+    <div class="rt-view" class:rt-pseudo={full && pseudo} bind:this={viewportEl} onpointermove={onViewMove} role="presentation" data-room={roomTheme}>
       <button class="rt-fs" onclick={toggleFull} aria-label={full ? "Keluar layar penuh" : "Layar penuh"} title={full ? "Keluar layar penuh (Esc)" : "Layar penuh"}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           {#if full}<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />{:else}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />{/if}
         </svg>
       </button>
+      <label class="rt-room" title={roomHint}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5" />
+        </svg>
+        <span>Ruangan</span>
+        <select bind:value={roomTheme} aria-label="Tema ruangan tampilan 3D">
+          {#each ROOM_THEMES as t (t.id)}
+            <option value={t.id}>{t.label}</option>
+          {/each}
+        </select>
+      </label>
       <canvas
         bind:this={canvas}
         aria-label="Tampilan 3D rak server. Seret untuk memutar, roda mouse untuk zoom, klik unit untuk detail."
@@ -419,6 +494,12 @@
             aria-label="Fokus ke {s.auto ? 'slot kosong' : s.nama} U{s.uStart}"
           >U{s.uStart}</button>
         {/each}
+        <!-- Label U rak lain di deretan (hanya penanda; klik ada di rak utama) -->
+        {#each neighbors as n, ni}
+          {#each n.slots as s}
+            <span class="rt-badge rt-badge-nb" data-badge="{n.id ?? ni}:{s.key}">U{s.uStart}</span>
+          {/each}
+        {/each}
       </div>
       {#if selected}
         <div class="rt-detail" role="dialog" aria-label="Detail {selected.auto ? 'slot kosong' : selected.nama}">
@@ -427,7 +508,7 @@
           <div class="rt-brand" style="color:{selected.color}">{selected.auto ? "Blanking panel" : selected.merek}</div>
           <div class="rt-rows">
             <div><span>Posisi</span><b>U{selected.uStart}{selected.uEnd > selected.uStart ? "–" + selected.uEnd : ""}</b></div>
-            <div><span>Tinggi</span><b>{selected.unitHeight}U (±{(selected.unitHeight * 4.445).toFixed(1).replace(".", ",")} cm)</b></div>
+            <div><span>Tinggi</span><b>{selected.unitHeight}U (±{(selected.unitHeight * 4.445).toFixed(1).replace(".", ",")} cm){selected.uncertain ? " · perkiraan" : ""}</b></div>
             <div><span>Fungsi</span><b>{selected.auto ? "Menutup slot kosong untuk aliran udara." : selected.desc}</b></div>
           </div>
           {#each unitIssues as is (is.id)}
@@ -485,15 +566,17 @@
           </div>
         </div>
       {/if}
-      {#if (topo.nodes.length || auditOn) && !(compact && menuOpen)}
+      {#if topo.nodes.length || powerTopo?.nodes.length || auditOn}
       <div class="rt-tl" class:compact>
-      {#if topo.nodes.length}
+      {#if topo.nodes.length || powerTopo?.nodes.length}
         <TopologyMiniMap
           {topo}
           topoPos={topoOverride ? {} : topoPos}
+          {powerTopo}
           selected={selectedKey ? `r:${selectedKey}` : null}
           readonly={!canEditTopo}
           onPick={pickNode}
+          onPowerOpen={onPowerOpen ? () => onPowerOpen() : null}
           onExpand={() => (editorOpen = true)}
         />
       {/if}
@@ -539,56 +622,76 @@
           onCablingChange={(c) => onCablingChange?.(c)}
         />
       {/if}
-      {#if compact}
-        <button
-          class="rt-burger"
-          class:open={menuOpen}
-          aria-label="Kontrol tampilan 3D"
-          aria-expanded={menuOpen}
-          aria-controls="rt-bar"
-          onclick={() => (menuOpen = !menuOpen)}
-        >
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
-            {#if menuOpen}<path d="M6 6l12 12M18 6L6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}
-          </svg>
-        </button>
-      {/if}
-      {#if !compact || menuOpen}
+      <!-- Menu kontrol 3D: tombol hamburger di kiri bawah (seperti tombol Start), isinya muncul di atasnya. -->
+      <button
+        class="rt-burger"
+        class:open={menuOpen}
+        aria-label="Menu kontrol tampilan 3D"
+        aria-expanded={menuOpen}
+        aria-controls="rt-bar"
+        title={menuOpen ? "Tutup menu" : "Menu kontrol 3D"}
+        onclick={() => (menuOpen = !menuOpen)}
+      >
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true">
+          {#if menuOpen}<path d="M6 6l12 12M18 6L6 18" />{:else}<path d="M4 7h16M4 12h16M4 17h16" />{/if}
+        </svg>
+        {#if !menuOpen && (auto || xray || auditOn || !showCables)}<i class="rt-burger-dot" aria-hidden="true"></i>{/if}
+      </button>
+      {#if menuOpen}
       <div class="rt-bar" id="rt-bar" role="toolbar" aria-label="Kontrol tampilan 3D">
-        <button class:active={view === "perspektif"} onclick={() => goView("perspektif")}>Perspektif</button>
-        <button class:active={view === "depan"} onclick={() => goView("depan")}>Depan</button>
-        <button class:active={view === "belakang"} onclick={() => goView("belakang")}>Belakang</button>
-        <button class:active={view === "samping"} onclick={() => goView("samping")}>Samping</button>
-        <button class:active={view === "atas"} onclick={() => goView("atas")}>Atas</button>
-        <span class="rt-sep" aria-hidden="true"></span>
-        <button class:active={auto} aria-pressed={auto} onclick={() => (auto = !auto)}>Putar otomatis</button>
-        <button class:active={showCables} aria-pressed={showCables} onclick={() => (showCables = !showCables)}>Kabel{cables.length ? ` · ${cables.length}` : ""}</button>
-        {#each ["data", "power", "fiber"] as l}
-          {#if laneCount[l]}
-            <button
-              class="rt-lane rt-lane-{l}"
-              class:active={showCables && lanes[l]}
-              aria-pressed={showCables && lanes[l]}
-              onclick={() => toggleLane(l)}
-            >{LANE_LABEL[l]} {laneCount[l]}</button>
-          {/if}
-        {/each}
-        <button class:active={xray} aria-pressed={xray} onclick={() => (xray = !xray)} title="Hardware tembus pandang agar jalur kabel terlihat">X-ray</button>
-        {#if cables.length}
-          <button
-            class="rt-audit-btn rt-tone-{auditTone}"
-            class:active={auditOn}
-            aria-pressed={auditOn}
-            onclick={() => (auditOn = !auditOn)}
-            title="Tandai kabel yang tidak rapi atau tidak aman"
-          >Cek keamanan · {audit.score}</button>
-        {/if}
-        <button class:active={showLabels} aria-pressed={showLabels} onclick={() => (showLabels = !showLabels)}>Label nomor</button>
-        <button onclick={resetAll}>Reset kamera</button>
-        {#if canPick}
-          <button class:active={pickOn} aria-pressed={pickOn} onclick={togglePick} title="Klik port A lalu port B untuk menambah kabel data">Pasang kabel</button>
-        {/if}
-        <ArLauncher getApi={() => scene?.getXr()} />
+        <div class="rt-sec" role="group" aria-label="Sudut pandang">
+          <h5>Sudut pandang</h5>
+          <div class="rt-grid">
+            <button class:active={view === "perspektif"} onclick={() => goView("perspektif")}>Perspektif</button>
+            <button class:active={view === "depan"} onclick={() => goView("depan")}>Depan</button>
+            <button class:active={view === "belakang"} onclick={() => goView("belakang")}>Belakang</button>
+            <button class:active={view === "samping"} onclick={() => goView("samping")}>Samping</button>
+            <button class:active={view === "atas"} onclick={() => goView("atas")}>Atas</button>
+          </div>
+        </div>
+        <div class="rt-sec" role="group" aria-label="Kamera">
+          <h5>Kamera</h5>
+          <div class="rt-grid">
+            <button class:active={auto} aria-pressed={auto} onclick={() => (auto = !auto)}>Putar otomatis</button>
+            <button onclick={resetAll}>Reset kamera</button>
+          </div>
+        </div>
+        <div class="rt-sec" role="group" aria-label="Kabel">
+          <h5>Kabel</h5>
+          <div class="rt-grid">
+            <button class:active={showCables} aria-pressed={showCables} onclick={() => (showCables = !showCables)}>Kabel{cables.length ? ` · ${cables.length}` : ""}</button>
+            {#each ["data", "power", "fiber"] as l}
+              {#if laneCount[l]}
+                <button
+                  class="rt-lane rt-lane-{l}"
+                  class:active={showCables && lanes[l]}
+                  aria-pressed={showCables && lanes[l]}
+                  onclick={() => toggleLane(l)}
+                >{LANE_LABEL[l]} {laneCount[l]}</button>
+              {/if}
+            {/each}
+            <button class:active={xray} aria-pressed={xray} onclick={() => (xray = !xray)} title="Hardware tembus pandang agar jalur kabel terlihat">X-ray</button>
+            {#if cables.length}
+              <button
+                class="rt-audit-btn rt-tone-{auditTone}"
+                class:active={auditOn}
+                aria-pressed={auditOn}
+                onclick={() => (auditOn = !auditOn)}
+                title="Tandai kabel yang tidak rapi atau tidak aman"
+              >Cek keamanan · {audit.score}</button>
+            {/if}
+            {#if canPick}
+              <button class:active={pickOn} aria-pressed={pickOn} onclick={togglePick} title="Klik port A lalu port B untuk menambah kabel data">Pasang kabel</button>
+            {/if}
+          </div>
+        </div>
+        <div class="rt-sec" role="group" aria-label="Tampilan">
+          <h5>Tampilan</h5>
+          <div class="rt-grid">
+            <button class:active={showLabels} aria-pressed={showLabels} onclick={() => (showLabels = !showLabels)}>Label nomor</button>
+            <ArLauncher getApi={() => scene?.getXr()} />
+          </div>
+        </div>
       </div>
       {/if}
     </div>
@@ -666,6 +769,22 @@
       radial-gradient(120% 90% at 50% 18%, #26314a 0%, #151b28 46%, #0a0d12 100%);
     box-shadow: inset 0 0 140px rgba(0, 0, 0, 0.6);
   }
+  /* Latar cadangan di luar geometri ruangan, disesuaikan dengan tema. */
+  .rt-view[data-room="ruang-server"] {
+    background: radial-gradient(120% 90% at 50% 16%, #7d8a99 0%, #3a434f 46%, #141920 100%);
+  }
+  .rt-view[data-room="data-center"] {
+    background: radial-gradient(120% 90% at 50% 16%, #16202e 0%, #0b111a 52%, #05070b 100%);
+  }
+  .rt-view[data-room="gudang"] {
+    background: radial-gradient(120% 90% at 50% 16%, #8a8272 0%, #4a463d 46%, #1b1915 100%);
+  }
+  .rt-view[data-room="kantor"] {
+    background: radial-gradient(120% 90% at 50% 16%, #cfd8e6 0%, #7c8697 46%, #2a303a 100%);
+  }
+  .rt-view[data-room="kamar-kerja"] {
+    background: radial-gradient(120% 90% at 50% 16%, #d8c4a8 0%, #7a6752 46%, #2b241d 100%);
+  }
   .rt-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
   .rt-badges { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
   .rt-badge {
@@ -684,6 +803,7 @@
     cursor: pointer;
     white-space: nowrap;
   }
+  .rt-badge-nb { pointer-events: none; }
   .rt-badge:hover { border-color: var(--lime); }
   .rt-badge.active { background: var(--lime); border-color: var(--lime-edge); color: #243006; }
   .rt-pick {
@@ -708,6 +828,30 @@
   }
   .rt-fs:hover { border-color: var(--lime-edge); color: #fff; }
   .rt-fs:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  /* Pemilih tema ruangan (kanan bawah, tetap terlihat di layar penuh). */
+  .rt-room {
+    position: absolute; right: 10px; bottom: 10px; z-index: 6;
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 34px; padding: 0 6px 0 10px; cursor: pointer;
+    color: #dbe2ee; background: rgba(10, 13, 18, 0.86); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px; font-size: 12px;
+  }
+  .rt-room:hover { border-color: var(--lime-edge); color: #fff; }
+  .rt-room svg { opacity: 0.75; flex: none; }
+  .rt-room span { font-weight: 600; white-space: nowrap; }
+  .rt-room select {
+    appearance: none; -webkit-appearance: none;
+    background-color: rgba(255, 255, 255, 0.06);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23dbe2ee' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+    color: #fff; border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 24px 4px 8px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .rt-room select option { color: #10141b; background: #f4f6f9; }
+  .rt-room select:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  @media (max-width: 520px) {
+    .rt-room > span { display: none; }
+  }
   .rt-view:fullscreen { height: 100%; border-radius: 0; border: none; }
   .rt-view.rt-pseudo { position: fixed; inset: 0; z-index: 1000; height: 100dvh; border-radius: 0; border: none; }
   .rt-detail {
@@ -789,7 +933,7 @@
     max-height: calc(100% - 100px); overflow-y: auto; display: flex; flex-direction: column;
     align-items: flex-start; gap: 8px; pointer-events: none;
   }
-  .rt-tl.compact { top: 56px; width: min(340px, calc(100% - 20px)); }
+  .rt-tl.compact { width: min(340px, calc(100% - 20px)); }
   .rt-tl > :global(*) { pointer-events: auto; }
   .rt-audit {
     position: static; width: 300px; max-width: 100%;
@@ -824,31 +968,68 @@
   .rt-bar .rt-audit-btn.active { background: var(--tone); border-color: var(--tone); color: #fff; }
   .rt-move { display: flex; gap: 6px; }
   .rt-move button { flex: 1; font-size: 12.5px; padding: 6px 4px; }
-  /* Dipusatkan dengan left/right + margin auto (bukan left:50% + translate),
-     supaya toolbar boleh memakai lebar penuh area 3D dan tidak terlipat
-     di setengah lebar. */
-  .rt-bar {
+  /* Menu kontrol 3D: tombol hamburger kiri bawah, isinya muncul sebagai panel di atasnya. */
+  .rt-burger {
     position: absolute;
     left: 10px;
-    right: 10px;
     bottom: 10px;
-    width: fit-content;
-    max-width: calc(100% - 20px);
-    margin-inline: auto;
-    display: flex;
+    z-index: 5;
+    display: inline-flex;
     align-items: center;
-    gap: 4px;
-    flex-wrap: wrap;
     justify-content: center;
-    background: rgba(10, 13, 18, 0.86);
+    width: 42px;
+    height: 42px;
+    padding: 0;
+    color: #dbe2ee;
+    background: rgba(10, 13, 18, 0.9);
     backdrop-filter: blur(6px);
     border: 1px solid var(--line);
     border-radius: 12px;
-    padding: 5px 6px;
+    cursor: pointer;
   }
+  .rt-burger:hover,
+  .rt-burger.open { border-color: var(--lime-edge); color: #fff; }
+  .rt-burger.open { background: rgba(26, 32, 22, 0.95); }
+  .rt-burger:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  /* Titik kecil: ada pengaturan aktif yang disembunyikan (putar otomatis, x-ray, cek keamanan, kabel mati). */
+  .rt-burger-dot { position: absolute; top: 6px; right: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--lime); box-shadow: 0 0 0 2px rgba(10, 13, 18, 0.9); }
+  /* Menu terbuka sebagai bar mendatar di dasar area 3D, di sebelah kanan tombol hamburger.
+     Tinggi hanya 1–2 baris, jadi tidak menutupi mini-map topologi di kiri atas. */
+  .rt-bar {
+    position: absolute;
+    left: 60px;
+    right: 10px;
+    bottom: 10px;
+    z-index: 5;
+    min-height: 42px;
+    max-height: min(220px, calc(100% - 20px));
+    overflow-y: auto;
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 12px;
+    background: rgba(10, 13, 18, 0.94);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 6px 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    transform-origin: left bottom;
+    animation: rt-pop 0.14s ease-out;
+  }
+  @keyframes rt-pop {
+    from { opacity: 0; transform: translateX(-8px) scale(0.98); }
+  }
+  @media (prefers-reduced-motion: reduce) { .rt-bar { animation: none; } }
+  .rt-sec { display: flex; align-items: center; min-width: 0; }
+  .rt-sec + .rt-sec { border-left: 1px solid var(--line); padding-left: 12px; }
+  /* Judul grup hanya untuk pembaca layar; tombolnya sudah jelas dari teksnya. */
+  .rt-sec h5 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); margin: 0; }
+  .rt-grid { display: flex; flex-wrap: wrap; gap: 4px; }
   .rt-bar button {
-    border: 1px solid transparent;
-    background: transparent;
+    border: 1px solid var(--line);
+    background: rgba(255, 255, 255, 0.04);
     color: #dbe2ee;
     border-radius: 999px;
     font-size: 12.5px;
@@ -858,7 +1039,6 @@
   }
   .rt-bar button:hover { border-color: var(--faint); color: #fff; }
   .rt-bar button.active { background: var(--lime); border-color: var(--lime-edge); color: #243006; font-weight: 600; }
-  .rt-sep { width: 1px; height: 18px; background: var(--line); margin: 0 4px; flex: none; }
   .rt-bar button:focus-visible,
   .rt-list li button:focus-visible,
   .rt-badge:focus-visible,
@@ -871,45 +1051,6 @@
   .rt-layout.compact { grid-template-columns: minmax(0, 1fr); }
   .rt-layout.compact .rt-view { order: 1; height: clamp(420px, 60vh, 640px); }
   .rt-layout.compact .rt-list { order: 2; max-height: 220px; }
-  .rt-burger {
-    position: absolute;
-    top: 10px;
-    left: 10px;
-    z-index: 5;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    padding: 0;
-    color: #dbe2ee;
-    background: rgba(10, 13, 18, 0.86);
-    backdrop-filter: blur(6px);
-    border: 1px solid var(--line);
-    border-radius: 10px;
-    cursor: pointer;
-  }
-  .rt-burger:hover,
-  .rt-burger.open { border-color: var(--lime-edge); color: #fff; }
-  .rt-burger:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
-  /* Menu hamburger: daftar tombol vertikal di bawah tombol, bukan bar melayang di dasar. */
-  .rt-layout.compact .rt-bar {
-    top: 56px;
-    bottom: auto;
-    left: 10px;
-    right: auto;
-    width: 190px;
-    margin-inline: 0;
-    flex-direction: column;
-    align-items: stretch;
-    flex-wrap: nowrap;
-    gap: 2px;
-    border-radius: 12px;
-    padding: 6px;
-    z-index: 5;
-  }
-  .rt-layout.compact .rt-bar button { text-align: left; border-radius: 8px; }
-  .rt-layout.compact .rt-sep { width: auto; height: 1px; margin: 4px 2px; }
   .rt-layout.compact .rt-detail { width: min(252px, calc(100% - 20px)); }
   @media (max-width: 900px) {
     .rt-layout { grid-template-columns: 1fr; }

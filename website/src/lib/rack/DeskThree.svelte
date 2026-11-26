@@ -1,6 +1,6 @@
 <script>
   import { onMount, untrack } from "svelte";
-  import { createDeskScene } from "./deskThreeScene.js";
+  import { createDeskScene, DESK_ROOM_THEMES, DEFAULT_DESK_ROOM_THEME } from "./deskThreeScene.js";
   import DeskPlan from "./DeskPlan.svelte";
   import ArLauncher from "./ArLauncher.svelte";
 
@@ -38,6 +38,19 @@
   }
   const selected = $derived(result.items.find((i) => i.key === selectedKey) ?? null);
 
+  // ── Tema ruangan 3D meja (pilihan terakhir diingat) ──
+  const ROOM_KEY = "neatops.desk3d.room";
+  function loadRoomTheme() {
+    try {
+      const v = localStorage.getItem(ROOM_KEY);
+      return DESK_ROOM_THEMES.some((t) => t.id === v) ? v : DEFAULT_DESK_ROOM_THEME;
+    } catch {
+      return DEFAULT_DESK_ROOM_THEME;
+    }
+  }
+  let roomTheme = $state(loadRoomTheme());
+  const roomHint = $derived(DESK_ROOM_THEMES.find((t) => t.id === roomTheme)?.hint ?? "");
+
   function goView(name) {
     view = name;
     scene?.setView(name);
@@ -47,6 +60,7 @@
     try {
       scene = createDeskScene(canvas, {
         result,
+        roomTheme,
         onSelect: (k) => (selectedKey = k),
         onUserOrbit: () => (view = null),
         onReady: () => (ready = true),
@@ -74,6 +88,18 @@
     const v = auto;
     untrack(() => scene?.setAutoRotate(v));
   });
+  // Tema ruangan: terapkan ke scene & ingat pilihan untuk kunjungan berikutnya.
+  $effect(() => {
+    const id = roomTheme;
+    untrack(() => {
+      scene?.setRoomTheme(id);
+      try {
+        localStorage.setItem(ROOM_KEY, id);
+      } catch {
+        /* localStorage bisa diblokir (mode privat) — abaikan. */
+      }
+    });
+  });
 </script>
 
 <svelte:window onkeydown={(e) => e.key === "Escape" && full && pseudo && toggleFull()} />
@@ -98,7 +124,18 @@
         {/each}
       </ol>
     </aside>
-    <div class="dt-view" class:dt-pseudo={full && pseudo} bind:this={viewportEl}>
+    <div class="dt-view" class:dt-pseudo={full && pseudo} bind:this={viewportEl} data-room={roomTheme}>
+      <label class="dt-room" title={roomHint}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M3 21h18M5 21V7l7-4 7 4v14M9 21v-5h6v5" />
+        </svg>
+        <span>Ruangan</span>
+        <select bind:value={roomTheme} aria-label="Tema ruangan tampilan 3D meja">
+          {#each DESK_ROOM_THEMES as t (t.id)}
+            <option value={t.id}>{t.label}</option>
+          {/each}
+        </select>
+      </label>
       <button class="dt-fs" onclick={toggleFull} aria-label={full ? "Keluar layar penuh" : "Layar penuh"} title={full ? "Keluar layar penuh (Esc)" : "Layar penuh"}>
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
           {#if full}<path d="M9 4v5H4M15 4v5h5M9 20v-5H4M15 20v-5h5" />{:else}<path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />{/if}
@@ -141,7 +178,34 @@
   .dt-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .dt-meta { font-family: var(--mono); font-size: 10.5px; color: var(--faint); }
   .dt-view { position: relative; min-width: 0; height: clamp(420px, 60vh, 660px); border-radius: 10px; overflow: hidden; border: 1px solid var(--line-soft); background: radial-gradient(120% 90% at 50% 18%, #26314a 0%, #151b28 46%, #0a0d12 100%); }
+  /* Latar cadangan di luar geometri ruangan, disesuaikan dengan tema. */
+  .dt-view[data-room="kantor"] { background: radial-gradient(120% 90% at 50% 16%, #cfd8e6 0%, #7c8697 46%, #2a303a 100%); }
+  .dt-view[data-room="rumah"] { background: radial-gradient(120% 90% at 50% 16%, #d8c4a8 0%, #7a6752 46%, #2b241d 100%); }
   .dt-view canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+  /* Pemilih tema ruangan (kiri atas, tetap terlihat di layar penuh). */
+  .dt-room {
+    position: absolute; top: 10px; left: 10px; z-index: 6;
+    display: inline-flex; align-items: center; gap: 7px;
+    height: 34px; padding: 0 6px 0 10px; cursor: pointer;
+    color: #dbe2ee; background: rgba(10, 13, 18, 0.86); backdrop-filter: blur(6px);
+    border: 1px solid var(--line); border-radius: 10px; font-size: 12px;
+  }
+  .dt-room:hover { border-color: var(--lime-edge); color: #fff; }
+  .dt-room svg { opacity: 0.75; flex: none; }
+  .dt-room span { font-weight: 600; white-space: nowrap; }
+  .dt-room select {
+    appearance: none; -webkit-appearance: none;
+    background-color: rgba(255, 255, 255, 0.06);
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%23dbe2ee' stroke-width='1.8' stroke-linecap='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 7px center;
+    color: #fff; border: 1px solid var(--line); border-radius: 7px;
+    padding: 4px 24px 4px 8px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  .dt-room select option { color: #10141b; background: #f4f6f9; }
+  .dt-room select:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }
+  @media (max-width: 520px) {
+    .dt-room > span { display: none; }
+  }
   .dt-fs { position: absolute; top: 10px; right: 10px; z-index: 6; display: inline-flex; align-items: center; justify-content: center; width: 34px; height: 34px; padding: 0; color: #dbe2ee; cursor: pointer; background: rgba(10, 13, 18, 0.86); border: 1px solid var(--line); border-radius: 10px; }
   .dt-fs:hover { border-color: var(--lime-edge); color: #fff; }
   .dt-fs:focus-visible { outline: 2px solid var(--lime); outline-offset: 1px; }

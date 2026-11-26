@@ -329,5 +329,6 @@ export const cabMetaOf = (r, reserved) => ({
   dataCabling: r?.dataCabling === "manual" ? "manual" : "auto",
   manualCables: r?.manualCables ?? [],
   endDevices: r?.endDevices ?? [],
+  powerTarget: r?.powerTarget,
   reserved,
 });

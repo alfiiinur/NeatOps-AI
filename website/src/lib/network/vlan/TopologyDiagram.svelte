@@ -7,7 +7,7 @@
   let { topo, network, edgeStatus = {}, selected = null, onPick = () => {} } = $props();
 
   const width = $derived(Math.max(640, Math.min(1400, topo.nodes.length * 120)));
-  const L = $derived(topologyLayout(topo.nodes, topo.edges, { width }));
+  const L = $derived(topologyLayout(topo.nodes, topo.edges, { width, groupBy: true }));
   const vids = $derived(network.vlans.map((v) => v.vid));
   const colorOf = (vid) => `hsl(${(vids.indexOf(vid) * 67) % 360} 65% 45%)`;
   const setOf = (dev, port) => (port ? network.ports?.[dev]?.map?.[port] : null);
@@ -36,7 +36,7 @@
   <rect x="-56" y="-20" width="112" height="40" rx="8" />
   <text class="tp-role" x="-48" y="-6">{iconOf(n)}</text>
   <text class="tp-name" x="0" y="5" text-anchor="middle">{short(n.nama)}</text>
-  {#if n.rackNama}<text class="tp-rack" x="0" y="16" text-anchor="middle">{short(n.rackNama, 22)}</text>{/if}
+  {#if n.rackNama && n.role === "end"}<text class="tp-rack" x="0" y="16" text-anchor="middle">{short(n.rackNama, 22)}</text>{/if}
 {/snippet}
 
 {#if !topo.nodes.length}
@@ -44,6 +44,12 @@
 {:else}
   <div class="tp-wrap">
     <svg viewBox="0 0 {L.width} {L.height}" role="img" aria-label="Diagram topologi jaringan">
+      {#each L.groups as g (g.name)}
+        <g class="tp-group">
+          <rect x={g.x} y={g.y} width={g.w} height={g.h} rx="14" />
+          <text x={g.x + 12} y={g.y + 16}>{short(g.name, Math.max(10, Math.floor(g.w / 7)))}</text>
+        </g>
+      {/each}
       {#each L.edges as e (e.id)}
         {@const st = edgeStyle(e)}
         <line x1={e.x1} y1={e.y1} x2={e.x2} y2={e.y2} stroke={st.stroke} stroke-width={st.width} stroke-dasharray={st.dash} stroke-linecap="round" />
@@ -75,6 +81,7 @@
     <span><i style="background:#c98a0b;height:4px"></i>trunk</span>
     <span><i style="background:var(--faint)"></i>belum diatur</span>
     <span><i class="dash"></i>antar rak</span>
+    <span><i class="box"></i>satu rak</span>
     <span><i style="background:var(--bad)"></i>bermasalah</span>
     Klik switch/router untuk mengatur port.
   </p>
@@ -83,6 +90,8 @@
 <style>
   .tp-wrap { overflow-x: auto; border: 1px solid var(--line-soft); border-radius: 10px; background: var(--bg-soft); }
   .tp-wrap svg { display: block; width: 100%; min-width: 600px; height: auto; }
+  .tp-group rect { fill: none; stroke: var(--lime-edge); stroke-width: 1.5; stroke-dasharray: 2 0; opacity: 0.9; }
+  .tp-group text { font-family: var(--mono); font-size: 11px; font-weight: 700; fill: var(--muted); }
   .tp-node rect { fill: var(--panel); stroke: var(--line); stroke-width: 1.5; }
   .tp-node.net { cursor: pointer; }
   .tp-node.net rect { stroke: var(--lime-edge); }
@@ -97,5 +106,6 @@
   .tp-legend span { display: inline-flex; align-items: center; gap: 5px; }
   .tp-legend i { display: inline-block; width: 22px; height: 2px; }
   .tp-legend i.dash { border-top: 2px dashed var(--faint); height: 0; }
+  .tp-legend i.box { width: 16px; height: 10px; border: 1.5px solid var(--lime-edge); border-radius: 3px; background: none; }
   .tp-empty { font-size: 13px; color: var(--muted); }
 </style>

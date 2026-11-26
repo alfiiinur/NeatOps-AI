@@ -93,15 +93,23 @@ export function keepMeta(prev, next, reserved) {
       next.slots,
       cabMetaOf(prev, reserved),
     );
-    return { ...next, ...ev, ...meta };
+    return { ...next, ...ev, ...meta, powerTarget: prev.powerTarget };
   }
-  return {
-    ...next,
-    ...meta,
+  const keep = {
     dataCabling: "auto",
     manualCables: prev?.manualCables ?? next?.manualCables ?? [],
     endDevices: prev?.endDevices ?? next?.endDevices ?? [],
   };
+  // Rak auto dengan tujuan kabel mains khusus (AVR / panel): hitung ulang supaya labelnya ikut.
+  if (prev?.powerTarget && next?.slots) {
+    const ev = evaluateLayout(
+      next.rackU,
+      next.slots,
+      cabMetaOf({ ...prev, ...keep }, reserved),
+    );
+    return { ...next, ...ev, ...meta, ...keep, powerTarget: prev.powerTarget };
+  }
+  return { ...next, ...meta, ...keep, powerTarget: prev?.powerTarget };
 }
 
 function build(rackU, index, role, units, autoAdded) {
@@ -349,6 +357,38 @@ export function moveUnitToRack(racks, fromIdx, key, toIdx) {
   };
 }
 
+/** Tambah satu hardware dari katalog ke rak (dipakai tombol saran). Ditolak bila sisa U tidak cukup. */
+export function addHardwareToRack(racks, idx, hwId) {
+  const rack = racks[idx];
+  const hw = HARDWARE_CATALOG.find((h) => h.id === hwId);
+  if (!rack || !hw)
+    return { ok: false, reason: "Rak atau hardware tidak valid." };
+  if (hw.unitHeight > rack.freeU) {
+    return {
+      ok: false,
+      reason: `${rack.nama} hanya sisa ${rack.freeU}U, ${hw.nama} butuh ${hw.unitHeight}U. Pindahkan unit lain atau tambah rak.`,
+    };
+  }
+  const dst = unitsOf(rack);
+  const maxN = dst.reduce(
+    (m, s) => Math.max(m, parseInt(/^u(\d+)$/.exec(s.key)?.[1] ?? "-1", 10)),
+    -1,
+  );
+  const added = { ...hw, key: `u${maxN + 1}` };
+  const at = dst.findIndex(
+    (s) =>
+      prioOf(s) < prioOf(added) ||
+      (prioOf(s) === prioOf(added) && (s.beratKg ?? 0) >= (added.beratKg ?? 0)),
+  );
+  dst.splice(at < 0 ? dst.length : at, 0, added);
+  const next = racks.map((r, i) =>
+    i === idx
+      ? { ...keepMeta(r, layoutFromUnits(r.rackU, dst)), manual: true }
+      : r,
+  );
+  return { ok: true, racks: next, added: { nama: hw.nama, rack: rack.nama } };
+}
+
 const firstSlot = (rack, pred) => unitsOf(rack).find(pred);
 
 /**
@@ -510,6 +550,12 @@ export function summarizeRacks(racks) {
     warnings: list.flatMap((r) =>
       r.warnings.map((w) => ({ ...w, rack: r.nama })),
     ),
-    tips: list.flatMap((r) => r.tips.map((t) => ({ text: t, rack: r.nama }))),
+    tips: list.flatMap((r) =>
+      r.tips.map((t, i) => ({
+        text: t,
+        rack: r.nama,
+        action: r.tipActions?.[i] ?? null,
+      })),
+    ),
   };
 }

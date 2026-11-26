@@ -11,6 +11,7 @@ import {
 import { sanitizeEndDevices } from "./cabling/endDevices.js";
 import { sanitizeTopoPos } from "./topology/topologyEdit.js";
 import { sanitizeNetwork } from "../network/vlan/vlanPlan.js";
+import { newPower, sanitizePower } from "./power/powerPlan.js";
 
 export { autoProjectName, validateProjectName };
 
@@ -41,6 +42,8 @@ export function newRackProject(name) {
     interLinks: [],
     // Perencanaan VLAN (halaman Jaringan & VLAN): blok jaringan, daftar VLAN, mode port per perangkat.
     network: sanitizeNetwork(null),
+    // Rantai daya PLN → panel → AVR → UPS → PDU (tab Daya & panel).
+    power: newPower(),
     // Mode meja kerja (terpisah dari state rak agar mode rak tidak berubah).
     mode: "rack", // "rack" | "desk"
     desk: { ...DEFAULT_DESK },
@@ -82,6 +85,7 @@ function normalize(p) {
     interMode: p.interMode === "manual" ? "manual" : "auto",
     interLinks: sanitizeInterLinks(p.interLinks),
     network: sanitizeNetwork(p.network),
+    power: sanitizePower(p.power),
     activeRack:
       Number.isInteger(p.activeRack) && p.activeRack >= 0 ? p.activeRack : 0,
     mode: p.mode === "desk" ? "desk" : "rack",

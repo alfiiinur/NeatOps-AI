@@ -100,6 +100,76 @@ def locate(bbox: BBox, grid: RackGrid) -> tuple[int, int]:
     return u_start, u_size
 
 
+DUP_U_OVERLAP = 0.6  # dua unit dianggap menempati U yang sama bila irisan U >= 60% unit yang lebih pendek
+DUP_X_OVERLAP = 0.6  # ...dan irisan x >= 60% unit yang lebih sempit (perangkat berdampingan tidak digabung)
+
+
+def _span_overlap(a0: float, a1: float, b0: float, b1: float) -> float:
+    return max(0.0, min(a1, b1) - max(a0, b0))
+
+
+def dedupe_by_grid(units: list, grid: RackGrid) -> list:
+    """Gabungkan unit ganda yang menempati U yang sama dan saling menutupi lebar: simpan satu, bukan dua kotak.
+
+    Dipilih yang prioritas kelasnya lebih tinggi, lalu keyakinan lebih tinggi. Perangkat berdampingan pada U yang
+    sama (router + firewall setengah lebar) tetap dipertahankan karena irisan x-nya kecil. Urutan asli dijaga.
+    `units` = objek dengan `.bbox`, `.confidence`, dan `.cls.priority`.
+    """
+
+    def rank(u):
+        return (getattr(getattr(u, "cls", None), "priority", 0), u.confidence or 0.0)
+
+    def same_slot(a, b) -> bool:
+        if u_uncertain(a.bbox, grid) or u_uncertain(b.bbox, grid):
+            return False  # kotak tak masuk akal sebagai satu/dua U (shelf, tower): jangan menebak
+        ua, ub = locate(a.bbox, grid), locate(b.bbox, grid)
+        u_ov = _span_overlap(ua[0], ua[0] + ua[1], ub[0], ub[0] + ub[1])
+        x_ov = _span_overlap(a.bbox[0], a.bbox[0] + a.bbox[2], b.bbox[0], b.bbox[0] + b.bbox[2])
+        return (
+            u_ov >= DUP_U_OVERLAP * min(ua[1], ub[1])
+            and x_ov >= DUP_X_OVERLAP * min(a.bbox[2], b.bbox[2])
+        )
+
+    dropped: set[int] = set()
+    order = sorted(range(len(units)), key=lambda i: rank(units[i]), reverse=True)
+    for pos, i in enumerate(order):
+        if i in dropped:
+            continue
+        for j in order[pos + 1 :]:
+            if j not in dropped and same_slot(units[i], units[j]):
+                dropped.add(j)
+    return [u for k, u in enumerate(units) if k not in dropped]
+
+
+X_SNAP_TOL = 0.15  # tepi kiri/kanan dalam 15% lebar panel dari tepi rak ikut di-snap ke tepi rak
+
+
+def snap_to_grid(bbox: BBox, grid: RackGrid) -> BBox:
+    """Ratakan bbox ke grid U: tepi atas/bawah ke garis U terdekat, tepi kiri/kanan ke kolom rak.
+
+    Tepi kiri/kanan hanya di-snap bila dekat tepi rak, supaya perangkat sempit (PDU vertikal, router setengah
+    lebar) tidak melebar. Hasil selalu di dalam area rak dan setinggi minimal 1U.
+    """
+    x, y, w, h = bbox
+    top_i = round((y - grid.top) / grid.u_h)
+    bot_i = round((y + h - grid.top) / grid.u_h)
+    top_i = max(0, min(grid.total_u - 1, top_i))
+    bot_i = max(top_i + 1, min(grid.total_u, bot_i))
+    ny0 = grid.top + top_i * grid.u_h
+    ny1 = min(grid.bottom, grid.top + bot_i * grid.u_h)
+
+    tol = X_SNAP_TOL * grid.ref_width
+    nx0, nx1 = x, x + w
+    if abs(nx0 - grid.x0) <= tol:
+        nx0 = grid.x0
+    if abs(nx1 - grid.x1) <= tol:
+        nx1 = grid.x1
+    nx0, nx1 = max(grid.x0, nx0), min(grid.x1, nx1)
+    if nx1 <= nx0:  # bbox di luar kolom rak: pertahankan apa adanya, jangan hasilkan kotak kosong
+        return bbox
+    return (nx0, ny0, nx1 - nx0, max(ny1 - ny0, grid.u_h * 0.5))
+
+
 def find_gaps(boxes: list[BBox], grid: RackGrid, min_u: float = MIN_GAP_U) -> list[tuple[float, float]]:
     """Rentang y (y0, y1) di area rak yang tidak tertutup unit mana pun, minimal `min_u` tinggi."""
     spans = sorted(

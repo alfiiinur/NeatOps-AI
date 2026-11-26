@@ -90,24 +90,24 @@
 </section>
 
 <style>
-  .vt-block { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 10px; }
+  .vt-block { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
   .vt-block label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: var(--muted); }
   .vt-block input { width: 190px; padding: 7px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--bg-soft); color: var(--text); font-size: 14px; }
   .vt-block p { flex: 1; min-width: 220px; margin: 0; font-size: 12.5px; color: var(--muted); }
   .mono { font-family: var(--mono); }
   .vt-err { color: var(--bad); font-size: 12.5px; margin: 4px 0 8px; }
   .vt-table { display: flex; flex-direction: column; border: 1px solid var(--line-soft); border-radius: 10px; overflow-x: auto; }
-  .vt-row { display: grid; grid-template-columns: 82px minmax(110px, 1.2fr) 86px 78px minmax(150px, 1.3fr) minmax(170px, 1.4fr) 84px 36px; gap: 8px; align-items: center; padding: 6px 10px; border-top: 1px solid var(--line-soft); min-width: 860px; font-size: 13px; }
+  .vt-row { display: grid; grid-template-columns: 82px minmax(110px, 1.2fr) 86px 78px minmax(150px, 1.3fr) minmax(170px, 1.4fr) 84px 36px; gap: 12px; align-items: center; padding: 12px 16px; border-top: 1px solid var(--line-soft); min-width: 860px; font-size: 13px; }
   .vt-headrow { border-top: none; background: var(--bg-soft); font-size: 11.5px; color: var(--muted); font-weight: 600; }
   .vt-row.bad { background: color-mix(in srgb, var(--bad) 7%, transparent); }
   .vt-row input { width: 100%; box-sizing: border-box; padding: 5px 7px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg-soft); color: var(--text); font: inherit; }
   .vt-pct { display: flex; align-items: center; gap: 3px; }
   .vt-row em { display: block; font-style: normal; font-size: 11px; color: var(--faint); }
   .vt-row .short { color: var(--warn); font-weight: 700; }
-  .vt-rowerr { padding: 2px 10px 6px; font-size: 12px; color: var(--bad); min-width: 860px; }
+  .vt-rowerr { padding: 2px 16px 10px; font-size: 12px; color: var(--bad); min-width: 860px; }
   .vt-x { border: none; background: transparent; color: var(--faint); padding: 4px 6px; cursor: pointer; }
   .vt-x:hover { color: var(--bad); }
   .vt-empty { font-size: 13px; color: var(--muted); }
-  .vt-add { margin-top: 10px; }
+  .vt-add { margin-top: 16px; }
   .vt-sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
 </style>

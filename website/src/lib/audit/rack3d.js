@@ -21,9 +21,13 @@ function tipeOf(jenis) {
 
 const clamp = (n, lo, hi) => Math.min(hi, Math.max(lo, n));
 
-/** Tinggi unit (U): dari backend (u_size), kalau tidak ada dari teks tipe/nama ("2U"), selain itu 1U. */
+/**
+ * Tinggi unit (U): dari backend (u_size), kalau tidak ada dari teks tipe/nama ("2U"), selain itu 1U.
+ * Posisi U yang tidak pasti (`u_uncertain`: UPS tower, kotak melewati batas rak) tidak dipercaya: tinggi
+ * jatuh ke teks tipe/nama, atau 1U, dan unit diberi badge "perkiraan".
+ */
 export function unitHeightOf(h) {
-  if (Number.isFinite(h.u_size) && h.u_size > 0) return clamp(Math.round(h.u_size), 1, 8);
+  if (!h.u_uncertain && Number.isFinite(h.u_size) && h.u_size > 0) return clamp(Math.round(h.u_size), 1, 8);
   const m = /(\d{1,2})\s*U\b/i.exec(`${h.tipe ?? ""} ${h.nama ?? ""}`);
   return m ? clamp(parseInt(m[1], 10), 1, 8) : 1;
 }
@@ -76,7 +80,9 @@ export function buildRackSlots(result) {
         auto: false,
         nama: h.nama,
         merek: h.merek && h.merek !== "—" ? h.merek : h.jenis ?? "",
-        desc: [h.jenis, h.tipe && h.tipe !== "—" ? h.tipe : ""].filter(Boolean).join(" · "),
+        desc: [h.jenis, h.tipe && h.tipe !== "—" ? h.tipe : "", h.u_uncertain ? "perkiraan" : ""].filter(Boolean).join(" · "),
+        uncertain: h.u_uncertain === true,
+        hwId: h.id ?? null,
         color: COLORS[h.jenis] ?? DEFAULT_COLOR,
         unitHeight: height,
         uStart,
